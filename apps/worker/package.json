@@ -18,8 +18,8 @@
   "dependencies": {
     "@uni-backups/queue": "workspace:*",
     "@uni-backups/shared": "workspace:*",
-    "bullmq": "^5.69.2",
-    "hono": "^4.11.9",
+    "bullmq": "^5.70.1",
+    "hono": "^4.12.2",
     "ioredis": "^5.9.3"
   },
   "devDependencies": {
