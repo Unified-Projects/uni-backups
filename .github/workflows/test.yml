@@ -205,7 +205,7 @@ jobs:
               timeout-minutes: 10
 
             - name: Run integration tests
-              run: docker compose -f tests/compose/docker-compose.yml --profile test run --rm test-runner
+              run: docker compose -f tests/compose/docker-compose.yml --profile test run --rm test-runner pnpm -C apps/api test:integration
               timeout-minutes: 30
 
             - name: Upload test results
