@@ -92,6 +92,8 @@ jobs:
   create-manifest:
     needs: build-and-push
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Log in to Docker Hub
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0

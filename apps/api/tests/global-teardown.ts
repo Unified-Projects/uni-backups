@@ -3,11 +3,11 @@
  * Stops Docker Compose services after all tests complete
  */
 
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import { resolve } from "path";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const COMPOSE_FILE = resolve(__dirname, "../../../tests/compose/services.yml");
 const PROJECT_NAME = "uni-backups-integration-test";
@@ -15,11 +15,11 @@ const PROJECT_NAME = "uni-backups-integration-test";
 export default async function globalTeardown(): Promise<void> {
   console.log("\n=== Stopping Integration Test Infrastructure ===\n");
 
-  const cmd = `docker compose -f ${COMPOSE_FILE} -p ${PROJECT_NAME} down -v --remove-orphans`;
-  console.log(`Running: ${cmd}\n`);
+  const args = ["compose", "-f", COMPOSE_FILE, "-p", PROJECT_NAME, "down", "-v", "--remove-orphans"];
+  console.log(`Running: docker ${args.join(" ")}\n`);
 
   try {
-    const { stdout, stderr } = await execAsync(cmd, { timeout: 120000 });
+    const { stdout, stderr } = await execFileAsync("docker", args, { timeout: 120000 });
     if (stdout) console.log(stdout);
     if (stderr) console.log(stderr);
   } catch (error: any) {

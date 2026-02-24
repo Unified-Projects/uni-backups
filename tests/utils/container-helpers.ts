@@ -220,7 +220,7 @@ export async function execInContainer(
   }
   if (options.interactive) flags.push("-it");
 
-  const cmdStr = command.map((c) => `"${c.replace(/"/g, '\\"')}"`).join(" ");
+  const cmdStr = command.map((c) => `"${c.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(" ");
   const fullCmd = `docker exec ${flags.join(" ")} ${name} ${cmdStr}`;
 
   try {
@@ -628,7 +628,7 @@ export const compose = {
     service: string,
     command: string[]
   ): Promise<ExecResult> {
-    const cmdStr = command.map((c) => `"${c.replace(/"/g, '\\"')}"`).join(" ");
+    const cmdStr = command.map((c) => `"${c.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(" ");
 
     try {
       const { stdout, stderr } = await execAsync(

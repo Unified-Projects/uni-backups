@@ -33,8 +33,8 @@ const cronExpressionArb = fc.record({
 const cronExpressionArbOption = fc.option(cronExpressionArb, { nil: undefined });
 
 const pathArb = fc.oneof(
-  fc.stringMatching(/^\/([a-zA-Z0-9._-]+\/?)*[a-zA-Z0-9._-]$/),
-  fc.stringMatching(/^[a-zA-Z]:\\([a-zA-Z0-9._-]+\\?)*[a-zA-Z0-9._-]$/)
+  fc.stringMatching(/^\/[a-zA-Z0-9._/-]*[a-zA-Z0-9._-]$/),
+  fc.stringMatching(/^[a-zA-Z]:\\[a-zA-Z0-9._\\-]*[a-zA-Z0-9._-]$/)
 );
 
 const urlArb = fc.stringMatching(

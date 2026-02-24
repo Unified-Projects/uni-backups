@@ -2,11 +2,11 @@
  * Docker utilities for test infrastructure management
  */
 
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import { resolve } from "path";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const COMPOSE_FILE = resolve(__dirname, "../compose/services.yml");
 
@@ -24,13 +24,12 @@ export async function startServices(
 ): Promise<void> {
   const { projectName = "uni-backups-test", services = [], timeout = 120 } = options;
 
-  const servicesArg = services.length > 0 ? services.join(" ") : "";
-  const cmd = `docker compose -f ${COMPOSE_FILE} -p ${projectName} up -d --wait ${servicesArg}`;
+  const args = ["compose", "-f", COMPOSE_FILE, "-p", projectName, "up", "-d", "--wait", ...services];
 
-  console.log(`Starting test services: ${cmd}`);
+  console.log(`Starting test services: docker ${args.join(" ")}`);
 
   try {
-    await execAsync(cmd, { timeout: timeout * 1000 });
+    await execFileAsync("docker", args, { timeout: timeout * 1000 });
     console.log("Test services started successfully");
   } catch (error) {
     console.error("Failed to start test services:", error);
@@ -46,12 +45,12 @@ export async function stopServices(
 ): Promise<void> {
   const { projectName = "uni-backups-test" } = options;
 
-  const cmd = `docker compose -f ${COMPOSE_FILE} -p ${projectName} down -v --remove-orphans`;
+  const args = ["compose", "-f", COMPOSE_FILE, "-p", projectName, "down", "-v", "--remove-orphans"];
 
-  console.log(`Stopping test services: ${cmd}`);
+  console.log(`Stopping test services: docker ${args.join(" ")}`);
 
   try {
-    await execAsync(cmd, { timeout: 60000 });
+    await execFileAsync("docker", args, { timeout: 60000 });
     console.log("Test services stopped successfully");
   } catch (error) {
     console.error("Failed to stop test services:", error);
@@ -68,10 +67,10 @@ export async function getServiceLogs(
 ): Promise<string> {
   const { projectName = "uni-backups-test" } = options;
 
-  const cmd = `docker compose -f ${COMPOSE_FILE} -p ${projectName} logs ${service}`;
+  const args = ["compose", "-f", COMPOSE_FILE, "-p", projectName, "logs", service];
 
   try {
-    const { stdout } = await execAsync(cmd);
+    const { stdout } = await execFileAsync("docker", args);
     return stdout;
   } catch (error) {
     console.error(`Failed to get logs for ${service}:`, error);
@@ -116,10 +115,10 @@ export async function execInContainer(
 ): Promise<{ stdout: string; stderr: string }> {
   const { projectName = "uni-backups-test" } = options;
 
-  const cmd = `docker compose -f ${COMPOSE_FILE} -p ${projectName} exec -T ${service} ${command}`;
+  const args = ["compose", "-f", COMPOSE_FILE, "-p", projectName, "exec", "-T", service, ...command.split(" ")];
 
   try {
-    const result = await execAsync(cmd);
+    const result = await execFileAsync("docker", args);
     return result;
   } catch (error: any) {
     return { stdout: error.stdout || "", stderr: error.stderr || "" };
@@ -137,9 +136,9 @@ export async function copyFromContainer(
 ): Promise<void> {
   const { projectName = "uni-backups-test" } = options;
 
-  const cmd = `docker compose -f ${COMPOSE_FILE} -p ${projectName} cp ${service}:${containerPath} ${hostPath}`;
+  const args = ["compose", "-f", COMPOSE_FILE, "-p", projectName, "cp", `${service}:${containerPath}`, hostPath];
 
-  await execAsync(cmd);
+  await execFileAsync("docker", args);
 }
 
 /**
@@ -153,9 +152,9 @@ export async function copyToContainer(
 ): Promise<void> {
   const { projectName = "uni-backups-test" } = options;
 
-  const cmd = `docker compose -f ${COMPOSE_FILE} -p ${projectName} cp ${hostPath} ${service}:${containerPath}`;
+  const args = ["compose", "-f", COMPOSE_FILE, "-p", projectName, "cp", hostPath, `${service}:${containerPath}`];
 
-  await execAsync(cmd);
+  await execFileAsync("docker", args);
 }
 
 /**
@@ -167,8 +166,8 @@ export async function areServicesRunning(
   const { projectName = "uni-backups-test" } = options;
 
   try {
-    const cmd = `docker compose -f ${COMPOSE_FILE} -p ${projectName} ps --format json`;
-    const { stdout } = await execAsync(cmd);
+    const args = ["compose", "-f", COMPOSE_FILE, "-p", projectName, "ps", "--format", "json"];
+    const { stdout } = await execFileAsync("docker", args);
 
     if (!stdout.trim()) {
       return false;
@@ -198,10 +197,10 @@ export async function getMappedPort(
 ): Promise<number> {
   const { projectName = "uni-backups-test" } = options;
 
-  const cmd = `docker compose -f ${COMPOSE_FILE} -p ${projectName} port ${service} ${containerPort}`;
+  const args = ["compose", "-f", COMPOSE_FILE, "-p", projectName, "port", service, String(containerPort)];
 
   try {
-    const { stdout } = await execAsync(cmd);
+    const { stdout } = await execFileAsync("docker", args);
     const match = stdout.match(/:(\d+)$/);
     if (match) {
       return parseInt(match[1], 10);

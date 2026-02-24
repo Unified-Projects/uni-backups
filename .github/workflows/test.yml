@@ -69,9 +69,6 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-            - name: Create Docker network
-              run: docker network create uni-backups-test-network || true
-
             - name: Start test infrastructure
               run: |
                   docker compose -f tests/compose/docker-compose.yml up -d \
@@ -191,9 +188,6 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-            - name: Create Docker network
-              run: docker network create uni-backups-test-network || true
-
             - name: Start test services
               run: |
                   docker compose -f tests/compose/docker-compose.yml --profile full up -d --build
@@ -236,9 +230,6 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-            - name: Create Docker network
-              run: docker network create uni-backups-test-network || true
 
             - name: Start test infrastructure
               run: |
@@ -298,9 +289,6 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-            - name: Create Docker network
-              run: docker network create uni-backups-test-network || true
 
             - name: Start test services
               run: |

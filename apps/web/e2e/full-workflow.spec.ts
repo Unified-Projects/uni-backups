@@ -416,7 +416,7 @@ test.describe("Concurrent Operations", () => {
     // Prefer the known stable job; crud stubs with .example.com hosts sort first alphabetically.
     const job =
       jobsData.jobs.find((j: any) => j.name === "test-local-folder") ||
-      jobsData.jobs.find((j: any) => !j.host?.includes(".example.com")) ||
+      jobsData.jobs.find((j: any) => !j.host?.endsWith(".example.com")) ||
       jobsData.jobs[0];
 
     const triggerPromises = [

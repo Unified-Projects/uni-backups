@@ -171,7 +171,7 @@ describe("API Security Tests", { timeout: 60000 }, () => {
 
           const text = await res.text();
           // Should not contain SQL or XSS execution results
-          expect(text).not.toMatch(/<script>/);
+          expect(text).not.toMatch(/<script\b/i);
           expect(text).not.toMatch(/DROP TABLE/);
         });
       });

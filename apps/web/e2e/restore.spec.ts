@@ -74,7 +74,7 @@ test.describe("Restore Workflow E2E", () => {
       // Prefer the known stable job over any crud-created stub with a placeholder host.
       const testJob =
         jobsData.jobs.find((j: any) => j.name === "test-local-folder") ||
-        jobsData.jobs.find((j: any) => !j.host?.includes(".example.com")) ||
+        jobsData.jobs.find((j: any) => !j.host?.endsWith(".example.com")) ||
         jobsData.jobs[0];
 
       // Trigger backup — 409 means a conflict (already running), not a successful start
@@ -181,7 +181,7 @@ test.describe("Database Backup and Restore E2E", () => {
     // Prefer the known good test job over any crud-test-created stub with a placeholder host.
     const pgJob =
       jobsData.jobs?.find((j: any) => j.name === "test-postgres") ||
-      jobsData.jobs?.find((j: any) => j.type === "postgres" && !j.host?.includes(".example.com"));
+      jobsData.jobs?.find((j: any) => j.type === "postgres" && !j.host?.endsWith(".example.com"));
 
     if (!pgJob) {
       test.skip(true, "No PostgreSQL job configured — skipping PostgreSQL backup test");
@@ -240,7 +240,7 @@ test.describe("Database Backup and Restore E2E", () => {
     // crud tests may have created stub mariadb jobs with placeholder hostnames that would fail.
     const mariaJob =
       jobsData.jobs?.find((j: any) => j.name === "test-mariadb") ||
-      jobsData.jobs?.find((j: any) => j.type === "mariadb" && !j.host?.includes(".example.com"));
+      jobsData.jobs?.find((j: any) => j.type === "mariadb" && !j.host?.endsWith(".example.com"));
 
     if (!mariaJob) {
       test.skip(true, "No MariaDB job configured — skipping MariaDB backup test");
@@ -287,7 +287,7 @@ test.describe("Database Backup and Restore E2E", () => {
     // Prefer the known good test job; fall back to any redis-type job that isn't a crud stub.
     const redisJob =
       jobsData.jobs?.find((j: any) => j.name === "test-redis") ||
-      jobsData.jobs?.find((j: any) => j.type === "redis" && !j.host?.includes(".example.com"));
+      jobsData.jobs?.find((j: any) => j.type === "redis" && !j.host?.endsWith(".example.com"));
 
     if (!redisJob) {
       test.skip(true, "No Redis job configured — skipping Redis backup test");

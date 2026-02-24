@@ -175,7 +175,7 @@ test.describe("Schedule Operations", () => {
     // Prefer the known stable job; crud tests may have put placeholder-host stubs first alphabetically.
     const jobName = (
       jobsData.jobs.find((j: any) => j.name === "test-local-folder") ||
-      jobsData.jobs.find((j: any) => !j.host?.includes(".example.com")) ||
+      jobsData.jobs.find((j: any) => !j.host?.endsWith(".example.com")) ||
       jobsData.jobs[0]
     ).name;
 
