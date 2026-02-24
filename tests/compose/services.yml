@@ -1,0 +1,347 @@
+# Test Infrastructure Services
+# Start with: docker compose -f tests/compose/services.yml up -d --wait
+# Stop with:  docker compose -f tests/compose/services.yml down -v
+#
+# Profile usage:
+#   docker compose --profile s3 up -d          # S3/MinIO only
+#   docker compose --profile rest up -d        # REST server only
+#   docker compose --profile sftp up -d        # SFTP only
+#   docker compose --profile postgres up -d    # PostgreSQL only
+#   docker compose --profile mariadb up -d     # MariaDB only
+#   docker compose --profile redis up -d       # Redis only
+#   docker compose --profile storage up -d     # All storage backends
+#   docker compose --profile database up -d    # All databases
+#   docker compose --profile full up -d        # Everything
+#   docker compose --profile test up -d        # All services + test runner
+
+services:
+  # MinIO - S3-compatible object storage
+  minio:
+    image: minio/minio:latest
+    profiles: ["s3", "storage", "full", "test"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - test-network
+
+  # MinIO bucket initialization
+  minio-init:
+    image: minio/mc:latest
+    profiles: ["s3", "storage", "full", "test"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set testminio http://minio:9000 minioadmin minioadmin123;
+      mc mb testminio/uni-backups-test --ignore-existing;
+      mc mb testminio/integration-test --ignore-existing;
+      echo 'MinIO buckets created successfully';
+      "
+    networks:
+      - test-network
+
+  # Restic REST server
+  rest-server:
+    image: restic/rest-server:latest
+    profiles: ["rest", "storage", "full", "test"]
+    environment:
+      - OPTIONS=--no-auth
+    ports:
+      - "8000:8000"
+    volumes:
+      - rest-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8000 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - test-network
+
+  # SFTP server (linuxserver/openssh-server works on ARM64 and AMD64)
+  sftp:
+    image: linuxserver/openssh-server:latest
+    profiles: ["sftp", "storage", "full", "test"]
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - USER_NAME=testuser
+      - USER_PASSWORD=testpass123
+      - PASSWORD_ACCESS=true
+    ports:
+      - "2222:2222"
+    volumes:
+      - sftp-data:/config/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 2222 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - test-network
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres", "database", "full", "test"]
+    environment:
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpass123
+      POSTGRES_DB: testdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../fixtures/seed/postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - test-network
+
+  # PostgreSQL restore target (empty database for restore verification)
+  postgres-restore:
+    image: postgres:16-alpine
+    profiles: ["postgres", "database", "full", "test"]
+    environment:
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpass123
+      POSTGRES_DB: restoredb
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-restore-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d restoredb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - test-network
+
+  # MariaDB database
+  mariadb:
+    image: mariadb:11-jammy
+    profiles: ["mariadb", "database", "full", "test"]
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass123
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpass123
+      MYSQL_DATABASE: testdb
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ../fixtures/seed/mariadb.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - test-network
+
+  # MariaDB restore target
+  mariadb-restore:
+    image: mariadb:11-jammy
+    profiles: ["mariadb", "database", "full", "test"]
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass123
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpass123
+      MYSQL_DATABASE: restoredb
+    ports:
+      - "3307:3306"
+    volumes:
+      - mariadb-restore-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - test-network
+
+  # Redis data volume initialization (set permissions for non-root user)
+  redis-data-init:
+    image: redis:7-alpine
+    profiles: ["redis", "database", "full", "test"]
+    user: root
+    entrypoint: /bin/sh -c "chown -R 1001:1001 /data && echo 'Redis data permissions set'"
+    volumes:
+      - redis-data:/data
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    profiles: ["redis", "database", "full", "test"]
+    user: "1001:1001"
+    command: redis-server --appendonly yes --requirepass testpass123
+    ports:
+      - "6379:6379"
+    expose:
+      - "6379"
+    volumes:
+      - redis-data:/data
+    depends_on:
+      redis-data-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "testpass123", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - test-network
+
+  # Redis initialization (seed test data)
+  redis-init:
+    image: redis:7-alpine
+    profiles: ["redis", "database", "full", "test"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      redis-cli -h redis -a testpass123 SET test:key1 'value1';
+      redis-cli -h redis -a testpass123 SET test:key2 'value2';
+      redis-cli -h redis -a testpass123 HSET test:hash field1 'hashvalue1' field2 'hashvalue2';
+      redis-cli -h redis -a testpass123 LPUSH test:list 'item1' 'item2' 'item3';
+      redis-cli -h redis -a testpass123 SET test:counter 42;
+      redis-cli -h redis -a testpass123 BGSAVE;
+      echo 'Redis test data seeded successfully';
+      "
+    networks:
+      - test-network
+
+  # Redis restore data volume initialization (set permissions for non-root user)
+  redis-restore-data-init:
+    image: redis:7-alpine
+    profiles: ["redis", "database", "full", "test"]
+    user: root
+    entrypoint: /bin/sh -c "chown -R 1001:1001 /data && echo 'Redis restore data permissions set'"
+    volumes:
+      - redis-restore-data:/data
+
+  # Redis restore target
+  redis-restore:
+    image: redis:7-alpine
+    profiles: ["redis", "database", "full", "test"]
+    user: "1001:1001"
+    command: redis-server --appendonly yes --requirepass testpass123
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-restore-data:/data
+    depends_on:
+      redis-restore-data-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "testpass123", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - test-network
+
+  # Test runner container - runs tests inside Docker with access to all services
+  test-runner:
+    build:
+      context: ../..
+      dockerfile: tests/Dockerfile.test
+    profiles: ["test"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=testpass123
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpass123
+      - POSTGRES_DB=testdb
+      - POSTGRES_RESTORE_HOST=postgres-restore
+      - POSTGRES_RESTORE_PORT=5432
+      - MARIADB_HOST=mariadb
+      - MARIADB_PORT=3306
+      - MARIADB_USER=testuser
+      - MARIADB_PASSWORD=testpass123
+      - MARIADB_DATABASE=testdb
+      - MARIADB_RESTORE_HOST=mariadb-restore
+      - MARIADB_RESTORE_PORT=3306
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - REST_SERVER_URL=http://rest-server:8000
+      - SFTP_HOST=sftp
+      - SFTP_PORT=2222
+      - SFTP_USER=testuser
+      - SFTP_PASSWORD=testpass123
+      - NODE_ENV=test
+      - UNI_BACKUPS_RESTIC_PASSWORD=test-password
+      - RUNNING_IN_DOCKER=true
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+        required: false
+      rest-server:
+        condition: service_healthy
+        required: false
+      sftp:
+        condition: service_healthy
+        required: false
+      postgres:
+        condition: service_healthy
+        required: false
+      mariadb:
+        condition: service_healthy
+        required: false
+    networks:
+      - test-network
+    volumes:
+      # Mount test output for viewing results
+      - ../../test-results:/app/test-results
+      # Share Redis data volume for RDB backup tests
+      - redis-data:/data/redis
+      - redis-restore-data:/data/redis-restore
+
+networks:
+  test-network:
+    driver: bridge
+
+volumes:
+  minio-data:
+  rest-data:
+  sftp-data:
+  postgres-data:
+  postgres-restore-data:
+  mariadb-data:
+  mariadb-restore-data:
+  redis-data:
+  redis-restore-data:

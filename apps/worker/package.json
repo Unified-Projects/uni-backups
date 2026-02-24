@@ -1,0 +1,33 @@
+{
+  "name": "@uni-backups/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "start": "bun run dist/index.js",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
+    "test:docker": "vitest run -c vitest.docker.config.ts",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@uni-backups/queue": "workspace:*",
+    "@uni-backups/shared": "workspace:*",
+    "bullmq": "^5.69.2",
+    "hono": "^4.11.9",
+    "ioredis": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "@vitest/coverage-v8": "^4.0.18",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18",
+    "ioredis-mock": "^8.13.1",
+    "vite-tsconfig-paths": "^6.1.1"
+  }
+}

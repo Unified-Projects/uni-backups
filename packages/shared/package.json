@@ -1,0 +1,56 @@
+{
+  "name": "@uni-backups/shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./config": {
+      "types": "./src/config/index.ts",
+      "default": "./src/config/index.ts"
+    },
+    "./config/*": {
+      "types": "./src/config/*.ts",
+      "default": "./src/config/*.ts"
+    },
+    "./redis": {
+      "types": "./src/redis/index.ts",
+      "default": "./src/redis/index.ts"
+    },
+    "./redis/*": {
+      "types": "./src/redis/*.ts",
+      "default": "./src/redis/*.ts"
+    }
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
+    "test:docker": "vitest run -c vitest.docker.config.ts",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "ioredis": "^5.9.3",
+    "yaml": "^2.8.2",
+    "zod": "^3.24.2"
+  },
+  "peerDependencies": {
+    "@uni-backups/queue": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@uni-backups/queue": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@uni-backups/queue": "workspace:*",
+    "fast-check": "^4.5.3",
+    "typescript": "^5.9.3",
+    "@types/node": "^25.2.3",
+    "vitest": "^4.0.18",
+    "@vitest/coverage-v8": "^4.0.18",
+    "ioredis-mock": "^8.13.1",
+    "vite-tsconfig-paths": "^6.1.1"
+  }
+}

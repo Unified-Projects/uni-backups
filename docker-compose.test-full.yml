@@ -1,0 +1,178 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass testpass123
+    expose:
+      - "6379"
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "testpass123", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: production
+    expose:
+      - "3001"
+    environment:
+      - UNI_BACKUPS_URL=http://haproxy
+      - UNI_BACKUPS_API_PORT=3001
+      - UNI_BACKUPS_RESTIC_PASSWORD=test-password
+      - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.test-full.yml
+      - UNI_BACKUPS_TEMP_DIR=/tmp/uni-backups
+      - UNI_BACKUPS_RESTIC_CACHE_DIR=/tmp/restic-cache
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=testpass123
+    volumes:
+      - ./config:/app/config:ro
+      - ./test-data/source:/backups/source
+      - ./test-data/repos:/backups/repos
+      - ./test-data/temp:/tmp/uni-backups
+      - ./test-data/cache:/tmp/restic-cache
+    networks:
+      - test-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  worker-1:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      target: production
+    expose:
+      - "3002"
+    environment:
+      - WORKER_ID=worker-1
+      - WORKER_NAME=Worker 1
+      - WORKER_GROUPS=default
+      - WORKER_PORT=3002
+      - UNI_BACKUPS_RESTIC_PASSWORD=test-password
+      - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.test-full.yml
+      - UNI_BACKUPS_TEMP_DIR=/tmp/uni-backups
+      - UNI_BACKUPS_RESTIC_CACHE_DIR=/tmp/restic-cache
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=testpass123
+    volumes:
+      - ./config:/app/config:ro
+      - ./test-data/source:/backups/source
+      - ./test-data/repos:/backups/repos
+      - worker-1-temp:/tmp/uni-backups
+      - worker-1-cache:/tmp/restic-cache
+    networks:
+      - test-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  worker-2:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      target: production
+    expose:
+      - "3002"
+    environment:
+      - WORKER_ID=worker-2
+      - WORKER_NAME=Worker 2
+      - WORKER_GROUPS=default
+      - WORKER_PORT=3002
+      - UNI_BACKUPS_RESTIC_PASSWORD=test-password
+      - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.test-full.yml
+      - UNI_BACKUPS_TEMP_DIR=/tmp/uni-backups
+      - UNI_BACKUPS_RESTIC_CACHE_DIR=/tmp/restic-cache
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=testpass123
+    volumes:
+      - ./config:/app/config:ro
+      - ./test-data/source:/backups/source
+      - ./test-data/repos:/backups/repos
+      - worker-2-temp:/tmp/uni-backups
+      - worker-2-cache:/tmp/restic-cache
+    networks:
+      - test-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: production
+      args:
+        # Empty = use relative URLs (api.ts paths include /api/ prefix)
+        NEXT_PUBLIC_API_URL: ""
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - test-network
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://0.0.0.0:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  haproxy:
+    image: haproxy:2.9-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - test-network
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/haproxy-health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  test-network:
+    name: compose_test-network
+    external: true
+
+volumes:
+  worker-1-temp:
+  worker-1-cache:
+  worker-2-temp:
+  worker-2-cache:

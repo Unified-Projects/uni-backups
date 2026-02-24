@@ -1,0 +1,80 @@
+FROM node:20-bookworm
+
+# Install PostgreSQL 16 client (matches server version in docker-compose)
+RUN apt-get update && apt-get install -y wget gnupg2 lsb-release \
+    && echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
+    && apt-get update
+
+# Install system dependencies
+RUN apt-get install -y \
+    curl \
+    openssh-client \
+    sshpass \
+    postgresql-client-16 \
+    mariadb-client \
+    redis-tools \
+    netcat-openbsd \
+    vim \
+    less \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Docker CLI (needed for chaos tests to manage containers via Docker socket)
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install restic backup tool (architecture-aware)
+RUN ARCH=$(dpkg --print-architecture) \
+    && wget -O /tmp/restic.bz2 "https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_${ARCH}.bz2" \
+    && bunzip2 /tmp/restic.bz2 \
+    && mv /tmp/restic /usr/local/bin/restic \
+    && chmod +x /usr/local/bin/restic \
+    && restic version
+
+# Install pnpm and bun
+RUN npm install -g pnpm bun
+
+# Create app directory
+WORKDIR /app
+
+# Install Playwright system dependencies first (before copying code)
+RUN npx -y playwright@1.58.2 install-deps
+
+# Copy all package.json files for workspace install (pnpm needs all of them)
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+COPY apps/worker/package.json ./apps/worker/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/queue/package.json ./packages/queue/
+COPY packages/ui/package.json ./packages/ui/
+
+# Install all dependencies (including workspaces)
+RUN pnpm install --frozen-lockfile
+
+# Copy the rest of the app
+COPY . .
+
+# Set API URL so the web build bakes in the correct endpoint for the test container
+ENV NEXT_PUBLIC_API_URL=http://localhost:3001
+
+# Build shared packages first, then apps
+RUN pnpm --filter @uni-backups/shared build && \
+    pnpm --filter @uni-backups/queue build && \
+    pnpm --filter @uni-backups/ui build && \
+    pnpm --filter @uni-backups/api build && \
+    pnpm --filter @uni-backups/worker build && \
+    pnpm --filter @uni-backups/web build
+
+# Install Playwright browsers after dependencies are installed
+RUN pnpm --filter @uni-backups/web exec playwright install
+
+# Expose common ports
+EXPOSE 3000 3001 8080
+
+# Default command - run integration tests
+CMD ["sh", "-c", "echo 'Test runner ready. Run tests with: pnpm --filter @uni-backups/api test:integration'"]

@@ -1,0 +1,5 @@
+Deeply nested file for directory structure verification.
+Path: sample/nested/deep/file.txt
+
+This file tests that directory structure is preserved during backup and restore.
+If you can read this after a restore, the directory hierarchy was maintained.

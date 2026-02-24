@@ -1,0 +1,77 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build
+dist
+.next
+.turbo
+out
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Config (ignore real configs, keep example)
+config/backups.yml
+
+# Test data
+test-data/repos/*
+!test-data/repos/.gitkeep
+test-data/temp/*
+!test-data/temp/.gitkeep
+test-data/cache/*
+!test-data/cache/.gitkeep
+!test-data/source/
+
+# Test results
+test-results/
+**/test-results/
+
+# Backups
+backups/
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Claude
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage
+**/coverage/
+
+# Playwright
+playwright-report/
+**/playwright-report/
+playwright/.cache/
+
+# Temporary
+tmp
+temp
+*.tmp
+
+# Docker
+docker-data/
+
+# Misc
+*.tsbuildinfo
+.eslintcache
+
+# Restic
+restic-cache/
+uni-backups-temp/

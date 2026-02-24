@@ -1,0 +1,181 @@
+# Full Test Environment Configuration
+# Contains jobs for ALL storage types and databases
+
+storage:
+  # Local filesystem storage
+  local-test:
+    type: local
+    path: /backups/repos
+
+  # Alias used by jobs-crud tests
+  local-storage:
+    type: local
+    path: /backups/repos
+
+  # S3/MinIO storage
+  s3-test:
+    type: s3
+    endpoint: http://minio:9000
+    bucket: uni-backups-test
+    region: us-east-1
+    access_key: minioadmin
+    secret_key: minioadmin123
+    path: backups
+
+  # Alias used by jobs-crud tests
+  s3-backup:
+    type: s3
+    endpoint: http://minio:9000
+    bucket: uni-backups-test
+    region: us-east-1
+    access_key: minioadmin
+    secret_key: minioadmin123
+    path: backups
+
+  # SFTP storage
+  sftp-test:
+    type: sftp
+    host: sftp
+    port: 2222
+    user: testuser
+    password: testpass123
+    path: /config/data
+
+  # Alias used by jobs-crud tests
+  sftp-storage:
+    type: sftp
+    host: sftp
+    port: 2222
+    user: testuser
+    password: testpass123
+    path: /config/data
+
+  # REST server storage
+  rest-test:
+    type: rest
+    url: http://rest-server:8000
+    path: uni-backups
+
+  # Alias used by jobs-crud tests (edit job - change storage backend)
+  new-storage:
+    type: local
+    path: /backups/repos
+
+jobs:
+  # ============ Folder/Volume Backups ============
+
+  # Local storage backup
+  test-local-folder:
+    type: folder
+    source: /backups/source/local-test
+    storage: local-test
+    repo: local-folder-backup
+    schedule: "*/10 * * * *"
+    retention:
+      last: 5
+      daily: 7
+    tags:
+      - test
+      - local
+      - folder
+
+  # S3 storage backup
+  test-s3-folder:
+    type: folder
+    source: /backups/source/s3-test
+    storage: s3-test
+    repo: s3-folder-backup
+    retention:
+      last: 5
+    tags:
+      - test
+      - s3
+      - folder
+
+  # SFTP storage backup
+  test-sftp-folder:
+    type: folder
+    source: /backups/source/sftp-test
+    storage: sftp-test
+    repo: sftp-folder-backup
+    retention:
+      last: 5
+    tags:
+      - test
+      - sftp
+      - folder
+
+  # REST server backup
+  test-rest-folder:
+    type: folder
+    source: /backups/source/rest-test
+    storage: rest-test
+    repo: rest-folder-backup
+    retention:
+      last: 5
+    tags:
+      - test
+      - rest
+      - folder
+
+  # ============ Database Backups ============
+
+  # PostgreSQL backup
+  test-postgres:
+    type: postgres
+    host: postgres
+    port: 5432
+    database: testdb
+    user: testuser
+    password: testpass123
+    storage: local-test
+    repo: postgres-backup
+    retention:
+      last: 5
+      daily: 7
+    tags:
+      - test
+      - postgres
+      - database
+
+  # MariaDB backup
+  test-mariadb:
+    type: mariadb
+    host: mariadb
+    port: 3306
+    database: testdb
+    user: testuser
+    password: testpass123
+    storage: local-test
+    repo: mariadb-backup
+    retention:
+      last: 5
+      daily: 7
+    tags:
+      - test
+      - mariadb
+      - database
+
+  # Redis backup
+  test-redis:
+    type: redis
+    host: redis
+    port: 6379
+    password: testpass123
+    rdb_path: /data/redis/dump.rdb
+    storage: local-test
+    repo: redis-backup
+    retention:
+      last: 5
+    tags:
+      - test
+      - redis
+      - database
+
+worker_groups:
+  default:
+    workers: []
+    quorum_size: 1
+
+restic:
+  password: test-password

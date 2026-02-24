@@ -1,0 +1,505 @@
+name: Test Suite
+
+on:
+    push:
+        branches: [main, develop]
+        paths-ignore:
+            - "**/*.md"
+            - "docs/**"
+            - "LICENSE*"
+            - ".vscode/**"
+            - ".editorconfig"
+    pull_request:
+        branches: [main, develop]
+        paths-ignore:
+            - "**/*.md"
+            - "docs/**"
+            - "LICENSE*"
+            - ".vscode/**"
+            - ".editorconfig"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    unit-tests:
+        name: Unit Tests
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.2.0
+
+            - name: Setup Node.js
+              uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+              with:
+                  node-version: "22"
+                  cache: "pnpm"
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile --prefer-offline
+
+            - name: Build shared packages
+              run: pnpm run build --filter=@uni-backups/shared --filter=@uni-backups/queue
+
+            - name: Run unit tests
+              run: pnpm run test:unit
+
+            - name: Upload coverage
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              if: always()
+              with:
+                  name: unit-test-coverage
+                  path: |
+                      **/coverage/
+                  retention-days: 7
+
+    e2e-tests:
+        name: E2E Tests
+        runs-on: ubuntu-latest
+        needs: unit-tests
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+            - name: Create Docker network
+              run: docker network create uni-backups-test-network || true
+
+            - name: Start test infrastructure
+              run: |
+                  docker compose -f tests/compose/docker-compose.yml up -d \
+                      redis redis-restore \
+                      minio rest-server sftp \
+                      postgres postgres-restore \
+                      mariadb mariadb-restore \
+                      --wait
+                  docker compose -f tests/compose/docker-compose.yml up -d \
+                      redis-data-init redis-restore-data-init redis-init minio-init || true
+                  sleep 10
+              timeout-minutes: 10
+
+            - name: Build test runner
+              run: docker compose -f tests/compose/docker-compose.yml build test-runner
+              timeout-minutes: 15
+
+            - name: Run E2E tests
+              run: |
+                  docker compose -f tests/compose/docker-compose.yml run --rm \
+                    -e UNI_BACKUPS_CONFIG_FILE=/app/config/backups.test-full.yml \
+                    -e UNI_BACKUPS_CORS_ORIGINS=http://localhost:3000 \
+                    test-runner bash -c "
+                  set -e
+
+                  echo 'Flushing stale state from Redis...'
+                  redis-cli -h redis -p 6379 -a testpass123 KEYS 'uni-backups:workers:*' 2>/dev/null | xargs -r redis-cli -h redis -p 6379 -a testpass123 DEL 2>/dev/null || true
+                  redis-cli -h redis -p 6379 -a testpass123 KEYS 'uni-backups:worker_groups:*' 2>/dev/null | xargs -r redis-cli -h redis -p 6379 -a testpass123 DEL 2>/dev/null || true
+                  redis-cli -h redis -p 6379 -a testpass123 KEYS 'uni-backups:jobs:history:*' 2>/dev/null | xargs -r redis-cli -h redis -p 6379 -a testpass123 DEL 2>/dev/null || true
+                  redis-cli -h redis -p 6379 -a testpass123 DEL 'uni-backups:jobs:history:all' 2>/dev/null || true
+                  redis-cli -h redis -p 6379 -a testpass123 KEYS 'bull:*' 2>/dev/null | xargs -r redis-cli -h redis -p 6379 -a testpass123 DEL 2>/dev/null || true
+
+                  echo 'Creating source directories for folder backup jobs...'
+                  mkdir -p /backups/source/local-test /backups/source/s3-test /backups/source/sftp-test /backups/source/rest-test
+                  mkdir -p /backups/repos
+                  echo 'test-data' > /backups/source/local-test/test-file.txt
+                  echo 'test-data' > /backups/source/s3-test/test-file.txt
+                  echo 'test-data' > /backups/source/sftp-test/test-file.txt
+                  echo 'test-data' > /backups/source/rest-test/test-file.txt
+
+                  echo 'Starting API server...'
+                  pnpm --filter @uni-backups/api start &
+                  API_PID=\$!
+
+                  echo 'Starting Web server...'
+                  cp -r /app/apps/web/.next/static /app/apps/web/.next/standalone/apps/web/.next/static 2>/dev/null || true
+                  cp -r /app/apps/web/public /app/apps/web/.next/standalone/apps/web/public 2>/dev/null || true
+                  PORT=3000 HOSTNAME=0.0.0.0 node /app/apps/web/.next/standalone/apps/web/server.js &
+                  WEB_PID=\$!
+
+                  echo 'Starting Worker...'
+                  pnpm --filter @uni-backups/worker start &
+                  WORKER_PID=\$!
+
+                  echo 'Waiting for servers to be ready...'
+                  for i in {1..30}; do
+                      if curl -s http://localhost:3001/health > /dev/null 2>&1 && curl -s http://localhost:3000 > /dev/null 2>&1; then
+                          echo 'Servers are ready!'
+                          break
+                      fi
+                      if [ \$i -eq 30 ]; then
+                          echo 'Servers failed to start in time'
+                          kill \$API_PID \$WEB_PID \$WORKER_PID 2>/dev/null || true
+                          exit 1
+                      fi
+                      sleep 2
+                  done
+
+                  echo 'Waiting for worker to register...'
+                  for i in {1..30}; do
+                      WORKER_RESP=\$(curl -s http://localhost:3001/api/workers 2>/dev/null || echo '{}')
+                      if echo \"\$WORKER_RESP\" | grep -q '\"id\"'; then
+                          echo 'Worker is ready'
+                          break
+                      fi
+                      if [ \$i -eq 30 ]; then
+                          echo 'Warning: worker not confirmed ready after 60s, proceeding anyway'
+                      fi
+                      sleep 2
+                  done
+
+                  echo 'Pre-running test-redis backup to ensure snapshots exist for restore tests...'
+                  curl -s -X POST http://localhost:3001/api/jobs/test-redis/run -H 'Content-Type: application/json' -d '{}' || true
+                  sleep 30
+                  echo 'Pre-run backup wait complete.'
+
+                  echo 'Running E2E tests...'
+                  TEST_BASE_URL=http://localhost:3000 TEST_API_URL=http://localhost:3001 CI=true pnpm --filter @uni-backups/web test:e2e
+                  TEST_EXIT_CODE=\$?
+
+                  echo 'Stopping servers...'
+                  kill \$API_PID \$WEB_PID \$WORKER_PID 2>/dev/null || true
+
+                  exit \$TEST_EXIT_CODE
+                  "
+              timeout-minutes: 30
+
+            - name: Upload E2E test results
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              if: always()
+              with:
+                  name: e2e-test-results
+                  path: |
+                      apps/web/playwright-report/
+                      apps/web/test-results/
+                  retention-days: 7
+
+            - name: Cleanup test infrastructure
+              if: always()
+              run: docker compose -f tests/compose/docker-compose.yml down -v
+
+    integration-tests:
+        name: Integration Tests (Docker)
+        runs-on: ubuntu-latest
+        needs: unit-tests
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+            - name: Create Docker network
+              run: docker network create uni-backups-test-network || true
+
+            - name: Start test services
+              run: |
+                  docker compose -f tests/compose/docker-compose.yml --profile full up -d --build
+                  # Wait for main services to be healthy (not init containers)
+                  echo "Waiting for services to be healthy..."
+                  for i in {1..60}; do
+                    HEALTHY=$(docker compose -f tests/compose/docker-compose.yml ps --format json 2>/dev/null | jq -s '[.[] | select(.State == "running" and .Health == "healthy")] | length' 2>/dev/null || echo "0")
+                    RUNNING=$(docker compose -f tests/compose/docker-compose.yml ps --format json 2>/dev/null | jq -s '[.[] | select(.State == "running")] | length' 2>/dev/null || echo "0")
+                    echo "Healthy: $HEALTHY, Running: $RUNNING ($i/60)"
+                    # Check if key services are responding
+                    if docker exec compose-redis-1 redis-cli -a testpass123 ping 2>/dev/null | grep -q PONG && \
+                       docker exec compose-postgres-1 pg_isready -U testuser 2>/dev/null; then
+                      echo "Core services are ready"
+                      break
+                    fi
+                    sleep 2
+                  done
+              timeout-minutes: 10
+
+            - name: Run integration tests
+              run: docker compose -f tests/compose/docker-compose.yml --profile test run --rm test-runner
+              timeout-minutes: 30
+
+            - name: Upload test results
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              if: always()
+              with:
+                  name: integration-test-results
+                  path: test-results/
+                  retention-days: 7
+
+            - name: Cleanup test services
+              if: always()
+              run: docker compose -f tests/compose/docker-compose.yml --profile full down -v
+
+    chaos-tests:
+        name: Chaos Engineering Tests
+        runs-on: ubuntu-latest
+        needs: integration-tests
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+            - name: Create Docker network
+              run: docker network create uni-backups-test-network || true
+
+            - name: Start test infrastructure
+              run: |
+                  docker compose -f tests/compose/docker-compose.yml --profile full up -d --build
+                  # Wait for main services to be healthy
+                  for i in {1..60}; do
+                    if docker exec compose-redis-1 redis-cli -a testpass123 ping 2>/dev/null | grep -q PONG && \
+                       docker exec compose-postgres-1 pg_isready -U testuser 2>/dev/null; then
+                      echo "Core services are ready"
+                      break
+                    fi
+                    echo "Waiting for services ($i/60)..."
+                    sleep 2
+                  done
+                  docker compose -f tests/compose/chaos-services.yml --profile chaos up -d
+              timeout-minutes: 15
+
+            - name: Wait for Toxiproxy
+              run: |
+                  for i in {1..30}; do
+                    if curl -s http://localhost:8474/version; then
+                      echo "Toxiproxy is ready"
+                      break
+                    fi
+                    echo "Waiting for Toxiproxy ($i/30)..."
+                    sleep 2
+                  done
+
+            - name: Run chaos tests
+              run: |
+                  docker compose -f tests/compose/docker-compose.yml --profile test run --rm \
+                    -e TOXIPROXY_HOST=toxiproxy \
+                    -e TOXIPROXY_PORT=8474 \
+                    -e TEST_TYPE=chaos \
+                    test-runner \
+                    pnpm vitest run --config tests/vitest.chaos.config.ts
+              timeout-minutes: 45
+
+            - name: Upload chaos test results
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              if: always()
+              with:
+                  name: chaos-test-results
+                  path: test-results/
+                  retention-days: 7
+
+            - name: Cleanup chaos infrastructure
+              if: always()
+              run: |
+                  docker compose -f tests/compose/chaos-services.yml --profile chaos down -v || true
+                  docker compose -f tests/compose/docker-compose.yml --profile full down -v || true
+
+    data-integrity-tests:
+        name: Data Integrity Tests
+        runs-on: ubuntu-latest
+        needs: integration-tests
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+            - name: Create Docker network
+              run: docker network create uni-backups-test-network || true
+
+            - name: Start test services
+              run: |
+                  docker compose -f tests/compose/docker-compose.yml --profile full up -d --build
+                  # Wait for main services to be healthy
+                  for i in {1..60}; do
+                    if docker exec compose-redis-1 redis-cli -a testpass123 ping 2>/dev/null | grep -q PONG && \
+                       docker exec compose-postgres-1 pg_isready -U testuser 2>/dev/null; then
+                      echo "Core services are ready"
+                      break
+                    fi
+                    echo "Waiting for services ($i/60)..."
+                    sleep 2
+                  done
+              timeout-minutes: 10
+
+            - name: Run data integrity tests
+              run: |
+                  docker compose -f tests/compose/docker-compose.yml --profile test run --rm \
+                    -e TEST_TYPE=integrity \
+                    test-runner \
+                    pnpm vitest run --config tests/vitest.integrity.config.ts
+              timeout-minutes: 60
+
+            - name: Upload integrity test results
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              if: always()
+              with:
+                  name: integrity-test-results
+                  path: test-results/
+                  retention-days: 7
+
+            - name: Cleanup test services
+              if: always()
+              run: docker compose -f tests/compose/docker-compose.yml --profile full down -v
+
+    lint:
+        name: Lint
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.2.0
+
+            - name: Setup Node.js
+              uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+              with:
+                  node-version: "22"
+                  cache: "pnpm"
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile --prefer-offline
+
+            - name: Build shared packages
+              run: pnpm run build --filter=@uni-backups/shared --filter=@uni-backups/queue
+
+            - name: Run linter
+              run: pnpm run lint
+
+    build:
+        name: Build
+        runs-on: ubuntu-latest
+        needs:
+            [
+                unit-tests,
+                lint,
+                e2e-tests,
+                integration-tests,
+                chaos-tests,
+                data-integrity-tests,
+            ]
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.2.0
+
+            - name: Setup Node.js
+              uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+              with:
+                  node-version: "22"
+                  cache: "pnpm"
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile --prefer-offline
+
+            - name: Build all packages
+              run: pnpm run build
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+            - name: Build Docker image (controller)
+              uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+              with:
+                  context: .
+                  file: apps/api/Dockerfile
+                  target: production
+                  tags: uni-backups-controller:test
+                  load: true
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+
+            - name: Build Docker image (worker)
+              uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+              with:
+                  context: .
+                  file: apps/worker/Dockerfile
+                  target: production
+                  tags: uni-backups-worker:test
+                  load: true
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+
+            - name: Build Docker image (console)
+              uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+              with:
+                  context: .
+                  file: apps/web/Dockerfile
+                  target: production
+                  tags: uni-backups-console:test
+                  load: true
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+
+    test-summary:
+        name: Test Summary
+        runs-on: ubuntu-latest
+        needs:
+            [
+                unit-tests,
+                e2e-tests,
+                integration-tests,
+                chaos-tests,
+                data-integrity-tests,
+                lint,
+                build,
+            ]
+        if: always()
+        steps:
+            - name: Check results
+              run: |
+                  echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+                  echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+
+                  if [ "${{ needs.unit-tests.result }}" = "success" ]; then
+                    echo "| Unit Tests | Passed |" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "| Unit Tests | Failed |" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+                  if [ "${{ needs.e2e-tests.result }}" = "success" ]; then
+                    echo "| E2E Tests | Passed |" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "| E2E Tests | Failed |" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+                  if [ "${{ needs.integration-tests.result }}" = "success" ]; then
+                    echo "| Integration Tests | Passed |" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "| Integration Tests | Failed |" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+                  if [ "${{ needs.chaos-tests.result }}" = "success" ]; then
+                    echo "| Chaos Tests | Passed |" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "| Chaos Tests | Failed |" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+                  if [ "${{ needs.data-integrity-tests.result }}" = "success" ]; then
+                    echo "| Data Integrity Tests | Passed |" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "| Data Integrity Tests | Failed |" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+                  if [ "${{ needs.lint.result }}" = "success" ]; then
+                    echo "| Lint | Passed |" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "| Lint | Failed |" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+                  if [ "${{ needs.build.result }}" = "success" ]; then
+                    echo "| Build | Passed |" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "| Build | Failed |" >> $GITHUB_STEP_SUMMARY
+                  fi
+
+            - name: Fail if any job failed
+              if: |
+                  needs.unit-tests.result == 'failure' ||
+                  needs.e2e-tests.result == 'failure' ||
+                  needs.integration-tests.result == 'failure' ||
+                  needs.chaos-tests.result == 'failure' ||
+                  needs.data-integrity-tests.result == 'failure' ||
+                  needs.lint.result == 'failure' ||
+                  needs.build.result == 'failure'
+              run: exit 1

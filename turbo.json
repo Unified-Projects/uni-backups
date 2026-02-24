@@ -1,0 +1,71 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*local"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "clean": {
+      "cache": false
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "cache": false
+    },
+    "test:unit": {
+      "outputs": ["coverage/**"],
+      "cache": false
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "cache": false,
+      "env": [
+        "REDIS_HOST",
+        "REDIS_PORT",
+        "REDIS_PASSWORD",
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_DB",
+        "POSTGRES_RESTORE_HOST",
+        "MARIADB_HOST",
+        "MARIADB_PORT",
+        "MARIADB_USER",
+        "MARIADB_PASSWORD",
+        "MARIADB_DATABASE",
+        "MARIADB_RESTORE_HOST",
+        "MINIO_ENDPOINT",
+        "MINIO_ACCESS_KEY",
+        "MINIO_SECRET_KEY",
+        "REST_SERVER_URL",
+        "SFTP_HOST",
+        "SFTP_PORT",
+        "SFTP_USER",
+        "SFTP_PASSWORD",
+        "NODE_ENV",
+        "UNI_BACKUPS_RESTIC_PASSWORD",
+        "RUNNING_IN_DOCKER"
+      ]
+    },
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "outputs": ["playwright-report/**", "test-results/**"],
+      "cache": false
+    },
+    "test:docker": {
+      "outputs": ["coverage/**"],
+      "cache": false
+    }
+  }
+}

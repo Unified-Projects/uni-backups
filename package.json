@@ -1,0 +1,53 @@
+{
+  "name": "uni-backups",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "type": "module",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "clean": "turbo clean && rm -rf node_modules",
+    "dev:api": "turbo dev --filter=@uni-backups/api",
+    "dev:web": "turbo dev --filter=@uni-backups/web",
+    "build:api": "turbo build --filter=@uni-backups/api",
+    "build:web": "turbo build --filter=@uni-backups/web",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration",
+    "test:e2e": "turbo run test:e2e",
+    "test:system": "vitest run --config tests/vitest.system.config.ts",
+    "test:docker": "turbo run test:docker",
+    "test:all": "pnpm test:unit && pnpm test:integration && pnpm test:system && pnpm test:e2e",
+    "test:services:up": "docker compose -f tests/compose/docker-compose.yml up -d --wait",
+    "test:services:down": "docker compose -f tests/compose/docker-compose.yml down -v",
+    "test:docker:up": "docker compose -f tests/compose/docker-compose.yml --profile test up -d --build --wait",
+    "test:docker:run": "docker compose -f tests/compose/docker-compose.yml --profile test run --rm test-runner",
+    "test:docker:down": "docker compose -f tests/compose/docker-compose.yml --profile test down -v",
+    "test:chaos": "vitest run --config tests/vitest.chaos.config.ts",
+    "test:integrity": "vitest run --config tests/vitest.integrity.config.ts",
+    "test:chaos:up": "docker compose -f tests/compose/docker-compose.yml up -d --wait && docker compose -f tests/compose/docker-compose.yml -f tests/compose/chaos-services.yml --profile chaos up -d && sleep 3 && docker compose -f tests/compose/docker-compose.yml -f tests/compose/chaos-services.yml --profile chaos-workers up -d --build --wait",
+    "test:chaos:run": "docker compose -f tests/compose/docker-compose.yml -f tests/compose/chaos-services.yml --profile test run --rm -e TOXIPROXY_HOST=toxiproxy -e TOXIPROXY_PORT=8474 -e REDIS_HOST=toxiproxy -e REDIS_PORT=16379 -e POSTGRES_HOST=toxiproxy -e POSTGRES_PORT=15432 -e MARIADB_HOST=toxiproxy -e MARIADB_PORT=13306 -e MINIO_ENDPOINT=toxiproxy:19000 -e REST_SERVER_URL=http://toxiproxy:18000 -e SFTP_HOST=toxiproxy -e SFTP_PORT=12222 -e TEST_TYPE=chaos test-runner pnpm vitest run --config tests/vitest.chaos.config.ts",
+    "test:chaos:down": "docker compose -f tests/compose/docker-compose.yml -f tests/compose/chaos-services.yml --profile chaos --profile chaos-workers down -v && docker compose -f tests/compose/docker-compose.yml down -v",
+    "test:full": "pnpm test:unit && pnpm test:integration && pnpm test:system && pnpm test:chaos && pnpm test:integrity && pnpm test:e2e"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@uni-backups/queue": "workspace:*",
+    "@uni-backups/shared": "workspace:*",
+    "bullmq": "^5.69.2",
+    "fast-check": "^4.5.3",
+    "ioredis": "^5.9.3",
+    "mysql2": "^3.17.1",
+    "pg": "^8.18.0",
+    "turbo": "^2.8.8",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18",
+    "vite-tsconfig-paths": "^6.1.1"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

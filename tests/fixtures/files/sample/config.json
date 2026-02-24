@@ -1,0 +1,18 @@
+{
+  "name": "test-config",
+  "version": "1.0.0",
+  "settings": {
+    "debug": true,
+    "timeout": 30,
+    "retries": 3
+  },
+  "features": [
+    "backup",
+    "restore",
+    "verify"
+  ],
+  "metadata": {
+    "checksum": "test-data-verification",
+    "created": "2024-01-01T00:00:00Z"
+  }
+}

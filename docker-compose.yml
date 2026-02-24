@@ -1,0 +1,147 @@
+services:
+  haproxy:
+    image: haproxy:2.9-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_healthy
+    networks:
+      - uni-backups-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/haproxy-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - uni-backups-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: production
+    environment:
+      - NEXT_PUBLIC_API_URL=/api
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - uni-backups-network
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: production
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - UNI_BACKUPS_RESTIC_PASSWORD=${UNI_BACKUPS_RESTIC_PASSWORD}
+      - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.yml
+    volumes:
+      - ./config:/app/config:ro
+      - /var/lib/docker/volumes:/backups/volumes:ro
+      - uni-backups-temp:/tmp/uni-backups
+      - uni-backups-cache:/tmp/restic-cache
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - uni-backups-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  worker-1:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      target: production
+    environment:
+      - WORKER_ID=worker-1
+      - WORKER_NAME=Worker 1
+      - WORKER_GROUPS=default
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - UNI_BACKUPS_RESTIC_PASSWORD=${UNI_BACKUPS_RESTIC_PASSWORD}
+      - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.yml
+    volumes:
+      - ./config:/app/config:ro
+      - /var/lib/docker/volumes:/backups/volumes:ro
+      - worker-1-temp:/tmp/uni-backups
+      - worker-1-cache:/tmp/restic-cache
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - uni-backups-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  worker-2:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      target: production
+    environment:
+      - WORKER_ID=worker-2
+      - WORKER_NAME=Worker 2
+      - WORKER_GROUPS=default
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - UNI_BACKUPS_RESTIC_PASSWORD=${UNI_BACKUPS_RESTIC_PASSWORD}
+      - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.yml
+    volumes:
+      - ./config:/app/config:ro
+      - /var/lib/docker/volumes:/backups/volumes:ro
+      - worker-2-temp:/tmp/uni-backups
+      - worker-2-cache:/tmp/restic-cache
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - uni-backups-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  uni-backups-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  uni-backups-temp:
+  uni-backups-cache:
+  worker-1-temp:
+  worker-1-cache:
+  worker-2-temp:
+  worker-2-cache:

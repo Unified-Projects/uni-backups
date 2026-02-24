@@ -1,0 +1,251 @@
+# Chaos Engineering Test Infrastructure
+# Start with: docker compose -f tests/compose/docker-compose.yml -f tests/compose/chaos-services.yml --profile chaos up -d
+# Stop with:  docker compose -f tests/compose/docker-compose.yml -f tests/compose/chaos-services.yml --profile chaos down -v
+
+services:
+  # Toxiproxy - Network fault injection proxy
+  # Provides network-level chaos: latency, packet loss, timeouts, disconnects
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:latest
+    profiles: ["chaos", "full-chaos", "test", "chaos-test"]
+    ports:
+      - "8474:8474"    # Toxiproxy API
+      - "15432:15432"  # Proxy for PostgreSQL
+      - "13306:13306"  # Proxy for MariaDB
+      - "16379:16379"  # Proxy for Redis
+      - "19000:19000"  # Proxy for MinIO
+      - "18000:18000"  # Proxy for REST Server
+      - "12222:12222"  # Proxy for SFTP
+    networks:
+      - test-network
+
+  # Toxiproxy initialization - Configure all proxies
+  toxiproxy-setup:
+    image: curlimages/curl:latest
+    profiles: ["chaos", "full-chaos", "test", "chaos-test"]
+    depends_on:
+      toxiproxy:
+        condition: service_started
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Configuring Toxiproxy proxies..."
+
+        # PostgreSQL proxy
+        curl -s -X POST http://toxiproxy:8474/proxies \
+          -H "Content-Type: application/json" \
+          -d '{"name":"postgres","listen":"0.0.0.0:15432","upstream":"postgres:5432","enabled":true}' || true
+
+        # MariaDB proxy
+        curl -s -X POST http://toxiproxy:8474/proxies \
+          -H "Content-Type: application/json" \
+          -d '{"name":"mariadb","listen":"0.0.0.0:13306","upstream":"mariadb:3306","enabled":true}' || true
+
+        # Redis proxy
+        curl -s -X POST http://toxiproxy:8474/proxies \
+          -H "Content-Type: application/json" \
+          -d '{"name":"redis","listen":"0.0.0.0:16379","upstream":"redis:6379","enabled":true}' || true
+
+        # MinIO proxy
+        curl -s -X POST http://toxiproxy:8474/proxies \
+          -H "Content-Type: application/json" \
+          -d '{"name":"minio","listen":"0.0.0.0:19000","upstream":"minio:9000","enabled":true}' || true
+
+        # REST Server proxy
+        curl -s -X POST http://toxiproxy:8474/proxies \
+          -H "Content-Type: application/json" \
+          -d '{"name":"rest","listen":"0.0.0.0:18000","upstream":"rest-server:8000","enabled":true}' || true
+
+        # SFTP proxy
+        curl -s -X POST http://toxiproxy:8474/proxies \
+          -H "Content-Type: application/json" \
+          -d '{"name":"sftp","listen":"0.0.0.0:12222","upstream":"sftp:2222","enabled":true}' || true
+
+        echo "Toxiproxy proxies configured:"
+        curl -s http://toxiproxy:8474/proxies | head -100
+    networks:
+      - test-network
+
+  # Chaos Worker - Worker that can be killed/paused for testing
+  # container_name is required so chaos tests can reference workers by exact name
+  # Note: no depends_on for redis -- core infrastructure (redis, etc.) must be started
+  # first via setup_infrastructure() or test:services:up. This avoids profile scoping
+  # issues since redis is defined in docker-compose.yml with its own profiles.
+  chaos-worker-1:
+    container_name: chaos-worker-1
+    build:
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
+      target: production
+    profiles: ["chaos-workers", "full-chaos"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=testpass123
+      - WORKER_ID=chaos-worker-1
+      - WORKER_NAME=chaos-worker-1
+      - WORKER_GROUPS=chaos-test
+      - UNI_BACKUPS_RESTIC_PASSWORD=test-password
+      - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.test-full.yml
+      - NODE_ENV=test
+    deploy:
+      resources:
+        limits:
+          memory: 256M  # Enable OOM testing
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+    volumes:
+      - ../../config:/app/config:ro
+
+  chaos-worker-2:
+    container_name: chaos-worker-2
+    build:
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
+      target: production
+    profiles: ["chaos-workers", "full-chaos"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=testpass123
+      - WORKER_ID=chaos-worker-2
+      - WORKER_NAME=chaos-worker-2
+      - WORKER_GROUPS=chaos-test
+      - UNI_BACKUPS_RESTIC_PASSWORD=test-password
+      - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.test-full.yml
+      - NODE_ENV=test
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+    volumes:
+      - ../../config:/app/config:ro
+
+  chaos-worker-3:
+    container_name: chaos-worker-3
+    build:
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
+      target: production
+    profiles: ["chaos-workers", "full-chaos"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=testpass123
+      - WORKER_ID=chaos-worker-3
+      - WORKER_NAME=chaos-worker-3
+      - WORKER_GROUPS=chaos-test
+      - UNI_BACKUPS_RESTIC_PASSWORD=test-password
+      - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.test-full.yml
+      - NODE_ENV=test
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+    volumes:
+      - ../../config:/app/config:ro
+
+  # Disk filler container for disk full testing
+  disk-filler:
+    image: alpine:latest
+    profiles: ["chaos", "full-chaos"]
+    entrypoint: /bin/sh
+    command: ["-c", "sleep infinity"]
+    volumes:
+      - type: tmpfs
+        target: /chaos-disk
+        tmpfs:
+          size: 104857600  # 100MB tmpfs for disk fill tests
+    networks:
+      - test-network
+
+  # Stress test container for CPU/Memory/IO stress
+  stress-tester:
+    image: progrium/stress:latest
+    profiles: ["chaos-stress", "full-chaos"]
+    entrypoint: /bin/sh
+    command: ["-c", "sleep infinity"]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1"
+    networks:
+      - test-network
+
+  # Chaos test runner - runs chaos engineering tests
+  chaos-test-runner:
+    build:
+      context: ../..
+      dockerfile: tests/Dockerfile.test
+    profiles: ["chaos-test"]
+    environment:
+      # Use Toxiproxy ports instead of direct connections
+      - REDIS_HOST=toxiproxy
+      - REDIS_PORT=16379
+      - REDIS_PASSWORD=testpass123
+      - POSTGRES_HOST=toxiproxy
+      - POSTGRES_PORT=15432
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpass123
+      - POSTGRES_DB=testdb
+      - MARIADB_HOST=toxiproxy
+      - MARIADB_PORT=13306
+      - MARIADB_USER=testuser
+      - MARIADB_PASSWORD=testpass123
+      - MARIADB_DATABASE=testdb
+      - MINIO_ENDPOINT=toxiproxy:19000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - REST_SERVER_URL=http://toxiproxy:18000
+      - SFTP_HOST=toxiproxy
+      - SFTP_PORT=12222
+      - SFTP_USER=testuser
+      - SFTP_PASSWORD=testpass123
+      - TOXIPROXY_HOST=toxiproxy
+      - TOXIPROXY_PORT=8474
+      - NODE_ENV=test
+      - TEST_TYPE=chaos
+      - UNI_BACKUPS_RESTIC_PASSWORD=test-password
+      - RUNNING_IN_DOCKER=true
+    depends_on:
+      toxiproxy-setup:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    command: ["pnpm", "vitest", "run", "--config", "tests/vitest.chaos.config.ts"]
+    networks:
+      - test-network
+    volumes:
+      - ../../test-results:/app/test-results
+      - /var/run/docker.sock:/var/run/docker.sock  # For container control
+
+networks:
+  test-network:
+    name: uni-backups-test-network

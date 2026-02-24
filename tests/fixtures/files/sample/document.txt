@@ -1,0 +1,23 @@
+Test Document for Uni-Backups
+=============================
+
+This is a test document used for verifying backup and restore operations.
+
+Key data to verify:
+- Line count: 20
+- Contains the word "verification"
+- Has multiple sections
+
+Section 1: Introduction
+-----------------------
+This backup system supports multiple storage backends and database types.
+
+Section 2: Verification
+-----------------------
+This file serves as verification data for restore testing.
+If this content matches after restore, the backup was successful.
+
+Section 3: Metadata
+-------------------
+Created by: test fixtures
+Purpose: Backup verification testing

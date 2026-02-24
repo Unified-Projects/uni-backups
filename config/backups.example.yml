@@ -1,0 +1,118 @@
+# Uni-Backups Configuration Example
+# Copy this to backups.yml and customize for your setup
+
+# Storage backends - where backups are stored
+storage:
+  # Hetzner Storage Box (SFTP)
+  hetzner-box:
+    type: sftp
+    host: uXXXXXX.your-storagebox.de
+    port: 22
+    user: uXXXXXX
+    # Option 1: SSH private key path (recommended)
+    # key_file: /run/secrets/storagebox_id_ed25519
+    # Option 2: password auth
+    # Use password_file for secrets
+    password_file: /run/secrets/storagebox_password
+    # Or direct password (not recommended for production)
+    # password: your-password
+    path: /backups
+
+  # Hetzner Object Storage / S3-compatible
+  hetzner-s3:
+    type: s3
+    endpoint: https://fsn1.your-objectstorage.com
+    bucket: my-backups
+    region: eu-central-1
+    access_key_file: /run/secrets/s3_access_key
+    secret_key_file: /run/secrets/s3_secret_key
+    # Or direct credentials (not recommended for production)
+    # access_key: AKIAXXXXXXXX
+    # secret_key: your-secret-key
+    path: ""
+
+  # Local filesystem (for testing)
+  local-test:
+    type: local
+    path: /backups/local
+
+# Backup jobs - what to backup and when
+jobs:
+  # Docker volume backup
+  app-data:
+    type: volume
+    source: /var/lib/docker/volumes/myapp_data/_data
+    storage: hetzner-box
+    repo: app-volumes  # Repository name on storage
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention:
+      daily: 7
+      weekly: 4
+      monthly: 12
+    exclude:
+      - "*.tmp"
+      - "*.log"
+    tags:
+      - production
+      - app-data
+
+  # Folder backup
+  config-files:
+    type: folder
+    source: /etc/myapp
+    storage: hetzner-box
+    repo: configs
+    schedule: "0 */6 * * *"  # Every 6 hours
+    retention:
+      daily: 7
+
+  # PostgreSQL database
+  postgres-main:
+    type: postgres
+    host: postgres  # Docker service name
+    port: 5432
+    database: myapp
+    user: postgres
+    password_file: /run/secrets/pg_password
+    storage: hetzner-s3
+    repo: databases
+    schedule: "0 */4 * * *"  # Every 4 hours
+    retention:
+      hourly: 6
+      daily: 7
+      weekly: 4
+    tags:
+      - database
+      - postgres
+
+  # MariaDB database
+  mariadb-main:
+    type: mariadb
+    host: mariadb
+    port: 3306
+    database: myapp
+    user: root
+    password_file: /run/secrets/mysql_password
+    storage: hetzner-s3
+    repo: databases  # Can share repo with postgres
+    schedule: "0 */4 * * *"
+    retention:
+      daily: 7
+    tags:
+      - database
+      - mariadb
+
+  # Redis backup
+  redis-cache:
+    type: redis
+    host: redis
+    port: 6379
+    # password_file: /run/secrets/redis_password  # If auth required
+    storage: hetzner-box
+    repo: redis
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    retention:
+      daily: 7
+    tags:
+      - cache
+      - redis

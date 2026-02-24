@@ -1,0 +1,37 @@
+{
+  "name": "@uni-backups/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "start": "bun run dist/index.js",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
+    "test:docker": "vitest run --config vitest.docker.config.ts",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@hono/zod-openapi": "^0.19.0",
+    "@uni-backups/queue": "workspace:*",
+    "@uni-backups/shared": "workspace:*",
+    "bullmq": "^5.69.2",
+    "hono": "^4.11.9",
+    "ioredis": "^5.9.3",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "@vitest/coverage-v8": "^4.0.18",
+    "mysql2": "^3.17.1",
+    "pg": "^8.18.0",
+    "testcontainers": "^11.11.0",
+    "typescript": "^5.9.3",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.0.18"
+  }
+}
