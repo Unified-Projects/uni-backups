@@ -1,7 +1,7 @@
 # Worker Dockerfile - Uses pnpm for dependency resolution, bun for runtime
 
 # Stage 1: Install dependencies with pnpm
-FROM node:22-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app
 
 # Install pnpm
