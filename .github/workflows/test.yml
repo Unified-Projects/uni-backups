@@ -191,20 +191,9 @@ jobs:
             - name: Start test services
               run: |
                   docker compose -f tests/compose/docker-compose.yml --profile full up -d --build
-                  # Wait for main services to be healthy (not init containers)
+                  # Wait for all services to be healthy using docker compose wait
                   echo "Waiting for services to be healthy..."
-                  for i in {1..60}; do
-                    HEALTHY=$(docker compose -f tests/compose/docker-compose.yml ps --format json 2>/dev/null | jq -s '[.[] | select(.State == "running" and .Health == "healthy")] | length' 2>/dev/null || echo "0")
-                    RUNNING=$(docker compose -f tests/compose/docker-compose.yml ps --format json 2>/dev/null | jq -s '[.[] | select(.State == "running")] | length' 2>/dev/null || echo "0")
-                    echo "Healthy: $HEALTHY, Running: $RUNNING ($i/60)"
-                    # Check if key services are responding
-                    if docker exec compose-redis-1 redis-cli -a testpass123 ping 2>/dev/null | grep -q PONG && \
-                       docker exec compose-postgres-1 pg_isready -U testuser 2>/dev/null; then
-                      echo "Core services are ready"
-                      break
-                    fi
-                    sleep 2
-                  done
+                  docker compose -f tests/compose/docker-compose.yml --profile full wait
               timeout-minutes: 10
 
             - name: Run integration tests
@@ -234,16 +223,8 @@ jobs:
             - name: Start test infrastructure
               run: |
                   docker compose -f tests/compose/docker-compose.yml --profile full up -d --build
-                  # Wait for main services to be healthy
-                  for i in {1..60}; do
-                    if docker exec compose-redis-1 redis-cli -a testpass123 ping 2>/dev/null | grep -q PONG && \
-                       docker exec compose-postgres-1 pg_isready -U testuser 2>/dev/null; then
-                      echo "Core services are ready"
-                      break
-                    fi
-                    echo "Waiting for services ($i/60)..."
-                    sleep 2
-                  done
+                  # Wait for all services to be healthy
+                  docker compose -f tests/compose/docker-compose.yml --profile full wait
                   docker compose -f tests/compose/chaos-services.yml --profile chaos up -d
               timeout-minutes: 15
 
@@ -293,16 +274,8 @@ jobs:
             - name: Start test services
               run: |
                   docker compose -f tests/compose/docker-compose.yml --profile full up -d --build
-                  # Wait for main services to be healthy
-                  for i in {1..60}; do
-                    if docker exec compose-redis-1 redis-cli -a testpass123 ping 2>/dev/null | grep -q PONG && \
-                       docker exec compose-postgres-1 pg_isready -U testuser 2>/dev/null; then
-                      echo "Core services are ready"
-                      break
-                    fi
-                    echo "Waiting for services ($i/60)..."
-                    sleep 2
-                  done
+                  # Wait for all services to be healthy
+                  docker compose -f tests/compose/docker-compose.yml --profile full wait
               timeout-minutes: 10
 
             - name: Run data integrity tests

@@ -665,7 +665,7 @@ function JobHistoryPanel({
 }
 
 export default function JobsPage() {
-  const queryClient = useQueryClient();
+  const _queryClient = useQueryClient();
   const { toast } = useToast();
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
