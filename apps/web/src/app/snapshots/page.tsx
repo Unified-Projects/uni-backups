@@ -41,7 +41,6 @@ import {
   getStorageRepos,
   getSnapshots,
   listSnapshotFiles,
-  API_URL,
   type FileEntry,
 } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
