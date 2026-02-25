@@ -62,7 +62,7 @@ app.route("/api/cluster", clusterRoutes);
 app.get("/", (c) => {
   return c.json({
     name: "Uni-Backups API",
-    version: "0.1.0",
+    version: "0.1.1",
     endpoints: {
       health: "/health",
       storage: "/api/storage",

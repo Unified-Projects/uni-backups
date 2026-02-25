@@ -1,8 +1,6 @@
 // Use NEXT_PUBLIC_API_URL if set (even empty string means relative URLs)
-// Only fall back to localhost:3001 if the env var is undefined
-const API_URL = typeof process.env.NEXT_PUBLIC_API_URL === "string"
-  ? process.env.NEXT_PUBLIC_API_URL
-  : "http://localhost:3001";
+// Default to relative URLs when not set (uses current host)
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export interface Storage {
   name: string;

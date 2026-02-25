@@ -21,12 +21,14 @@ schedule.get("/", async (c) => {
     recent: recent.map((r) => ({
       id: r.id,
       name: r.jobName,
+      jobName: r.jobName,
       startTime: new Date(r.startTime),
       endTime: r.endTime ? new Date(r.endTime) : undefined,
       status: r.status,
       duration: r.duration,
       snapshotId: r.snapshotId,
       workerId: r.workerId,
+      message: r.error,
     })),
   });
 });
@@ -85,7 +87,7 @@ schedule.get("/stats", async (c) => {
 
   const calculateSuccessRate = (runs: typeof allRuns) => {
     if (runs.length === 0) return 100;
-    const successful = runs.filter((r) => r.status === "success").length;
+    const successful = runs.filter((r) => r.status === "completed" || r.status === "success").length;
     return Math.round((successful / runs.length) * 100);
   };
 

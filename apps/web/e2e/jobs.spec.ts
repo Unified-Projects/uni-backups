@@ -120,9 +120,33 @@ test.describe("Backup Workflow E2E", () => {
       );
     const testJob = localJob || jobsData.jobs[0];
 
-    const runResponse = await request.post(`${apiUrl}/api/jobs/${testJob.name}/run`, {
+    // Try to run the job - if it's already running (409), wait for it to finish first
+    let runResponse = await request.post(`${apiUrl}/api/jobs/${testJob.name}/run`, {
       data: {},
     });
+
+    // If job is already running, wait for it to finish then try again
+    if (runResponse.status() === 409) {
+      console.log(`Job ${testJob.name} is already running, waiting for it to finish...`);
+      const maxWaitMs = 60000;
+      const pollIntervalMs = 2000;
+      const waitStart = Date.now();
+
+      while (Date.now() - waitStart < maxWaitMs) {
+        const statusResponse = await request.get(`${apiUrl}/api/jobs/${testJob.name}`);
+        const statusData = await statusResponse.json();
+        if (!statusData.isRunning) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      }
+
+      // Now try to run again
+      runResponse = await request.post(`${apiUrl}/api/jobs/${testJob.name}/run`, {
+        data: {},
+      });
+    }
+
     expect(runResponse.status(), `POST /api/jobs/${testJob.name}/run failed with status ${runResponse.status()}`).toBe(200);
 
     const runData = await runResponse.json();

@@ -65,7 +65,7 @@ export function Sidebar() {
       <div className="border-t p-2 md:p-4">
         <div className="flex items-center justify-between">
           <div className="hidden md:block text-xs text-muted-foreground">
-            Uni-Backups v0.1.0
+            Uni-Backups v0.1.1
           </div>
           <Button
             variant="ghost"
