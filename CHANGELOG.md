@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Jobs now correctly show as "completed" (or "success") instead of always marked as "failed"
+- Workers page now uses configured API URL instead of hardcoded localhost:3001
+- Restore page now uses configured API URL instead of hardcoded localhost:3001
+- Snapshot browser now displays error messages when file listing fails
+
 ## [0.1.0] - 2026-02-17
 
 ### Added

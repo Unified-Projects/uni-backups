@@ -89,11 +89,11 @@ jobs.get("/", async (c) => {
         bVal = b.lastRun?.startTime ? new Date(b.lastRun.startTime).getTime() : 0;
         break;
       case "status":
-        // Sort order: running > success > failed > never run
+        // Sort order: running > completed > failed > never run
         const statusOrder = (job: typeof a) => {
           if (job.isRunning) return 3;
           if (!job.lastRun) return 0;
-          return job.lastRun.status === "success" ? 2 : 1;
+          return job.lastRun.status === "completed" || job.lastRun.status === "success" ? 2 : 1;
         };
         aVal = statusOrder(a);
         bVal = statusOrder(b);

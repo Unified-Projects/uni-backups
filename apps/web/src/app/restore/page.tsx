@@ -39,10 +39,9 @@ import {
   getRestoreStatus,
   getRestoreOperations,
   type RestoreOperation,
+  API_URL,
 } from "@/lib/api";
 import { useToast } from "@uni-backups/ui/hooks/use-toast";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 function RestoreStatusBadge({ status }: { status: RestoreOperation["status"] }) {
   switch (status) {

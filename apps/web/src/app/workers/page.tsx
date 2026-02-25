@@ -5,8 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@uni-backups/ui/compon
 import { Badge } from "@uni-backups/ui/components/badge";
 import { Skeleton } from "@uni-backups/ui/components/skeleton";
 import { Activity, CheckCircle, XCircle, Clock, Users } from "lucide-react";
-
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+import { API_URL } from "@/lib/api";
 
 interface Worker {
   id: string;
@@ -33,13 +32,13 @@ interface WorkerGroup {
 }
 
 async function getWorkers(): Promise<{ workers: Worker[] }> {
-  const res = await fetch(`${apiUrl}/api/workers`);
+  const res = await fetch(`${API_URL}/api/workers`);
   if (!res.ok) throw new Error("Failed to fetch workers");
   return res.json();
 }
 
 async function getWorkerGroups(): Promise<{ groups: WorkerGroup[] }> {
-  const res = await fetch(`${apiUrl}/api/workers/groups`);
+  const res = await fetch(`${API_URL}/api/workers/groups`);
   if (!res.ok) throw new Error("Failed to fetch worker groups");
   return res.json();
 }

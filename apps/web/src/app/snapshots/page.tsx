@@ -41,6 +41,7 @@ import {
   getStorageRepos,
   getSnapshots,
   listSnapshotFiles,
+  API_URL,
   type FileEntry,
 } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
@@ -63,7 +64,7 @@ function FileBrowser({
 }) {
   const [currentPath, setCurrentPath] = useState("/");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["snapshot-files", storage, repo, snapshotId, currentPath],
     queryFn: () => listSnapshotFiles(storage, repo, snapshotId, currentPath),
   });
@@ -86,6 +87,15 @@ function FileBrowser({
         {[1, 2, 3, 4, 5].map((i) => (
           <Skeleton key={i} className="h-10 w-full" />
         ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="text-center py-8 text-red-500">
+        <p>Failed to load files</p>
+        <p className="text-sm text-muted-foreground">{String(error)}</p>
       </div>
     );
   }
