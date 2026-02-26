@@ -17,7 +17,7 @@ export interface Storage {
 export interface JobRun {
   startTime: string;
   endTime?: string;
-  status: "running" | "success" | "failed";
+  status: "pending" | "running" | "completed" | "success" | "failed";
   message?: string;
   snapshotId?: string;
 }

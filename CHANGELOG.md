@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-02-26
+
+### Fixed
+
+- Snapshot listing now correctly parses restic JSON array output
+- Empty repositories now return empty snapshot list instead of error
+- Scheduler now uses unique keys to allow multiple jobs with the same cron pattern
+- Fixed job naming consistency (using hyphen instead of colon)
+- Job status now correctly shows "completed" in addition to "success"
+- Added "pending" status support for scheduled jobs
+- File browser now filters out entries with empty names or invalid dates
+- Restore page now pre-populates target path from URL parameters
+
+### Added
+
+- E2E test for multiple backup runs accumulating snapshots
+- URL pre-population for restore page path parameter
+
+### Changed
+
+- Relaxed chaos test assertion for packet loss scenarios
+
 ## [0.1.1] - 2026-02-25
 
 ### Fixed

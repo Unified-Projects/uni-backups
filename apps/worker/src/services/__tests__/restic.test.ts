@@ -567,20 +567,18 @@ describe("Restic Service", () => {
     };
 
     it("parses JSON output correctly", async () => {
-      const snapshots = [
-        {
-          id: "abc123",
-          short_id: "abc1",
-          time: "2024-01-15T10:30:00Z",
-          hostname: "server1",
-          username: "root",
-          paths: ["/data"],
-          tags: ["daily"],
-          program_version: "0.16.0",
-        },
-      ];
+      const snapshot = [{
+        id: "abc123",
+        short_id: "abc1",
+        time: "2024-01-15T10:30:00Z",
+        hostname: "server1",
+        username: "root",
+        paths: ["/data"],
+        tags: ["daily"],
+        program_version: "0.16.0",
+      }];
       vi.mocked(spawn).mockReturnValue(
-        createMockProcess(JSON.stringify(snapshots), "", 0) as any
+        createMockProcess(JSON.stringify(snapshot), "", 0) as any
       );
 
       const result = await listSnapshots(localStorage, "test-repo", "password");
@@ -592,11 +590,9 @@ describe("Restic Service", () => {
     });
 
     it("applies tag filter and returns matching results", async () => {
-      const snapshots = [
-        { id: "snap1", short_id: "s1", time: "2024-01-15T10:30:00Z", hostname: "h1", username: "root", paths: ["/data"], tags: ["daily"], program_version: "0.16.0" },
-      ];
+      const snapshot = [{ id: "snap1", short_id: "s1", time: "2024-01-15T10:30:00Z", hostname: "h1", username: "root", paths: ["/data"], tags: ["daily"], program_version: "0.16.0" }];
       vi.mocked(spawn).mockReturnValue(
-        createMockProcess(JSON.stringify(snapshots), "", 0) as any
+        createMockProcess(JSON.stringify(snapshot), "", 0) as any
       );
 
       const result = await listSnapshots(localStorage, "test-repo", "password", {
@@ -613,11 +609,9 @@ describe("Restic Service", () => {
     });
 
     it("applies host filter and returns matching results", async () => {
-      const snapshots = [
-        { id: "snap1", short_id: "s1", time: "2024-01-15T10:30:00Z", hostname: "server1", username: "root", paths: ["/data"], tags: null, program_version: "0.16.0" },
-      ];
+      const snapshot = [{ id: "snap1", short_id: "s1", time: "2024-01-15T10:30:00Z", hostname: "server1", username: "root", paths: ["/data"], tags: null, program_version: "0.16.0" }];
       vi.mocked(spawn).mockReturnValue(
-        createMockProcess(JSON.stringify(snapshots), "", 0) as any
+        createMockProcess(JSON.stringify(snapshot), "", 0) as any
       );
 
       const result = await listSnapshots(localStorage, "test-repo", "password", {
@@ -636,11 +630,9 @@ describe("Restic Service", () => {
     });
 
     it("applies path filter and returns matching results", async () => {
-      const snapshots = [
-        { id: "snap1", short_id: "s1", time: "2024-01-15T10:30:00Z", hostname: "h1", username: "root", paths: ["/data"], tags: null, program_version: "0.16.0" },
-      ];
+      const snapshot = [{ id: "snap1", short_id: "s1", time: "2024-01-15T10:30:00Z", hostname: "h1", username: "root", paths: ["/data"], tags: null, program_version: "0.16.0" }];
       vi.mocked(spawn).mockReturnValue(
-        createMockProcess(JSON.stringify(snapshots), "", 0) as any
+        createMockProcess(JSON.stringify(snapshot), "", 0) as any
       );
 
       const result = await listSnapshots(localStorage, "test-repo", "password", {

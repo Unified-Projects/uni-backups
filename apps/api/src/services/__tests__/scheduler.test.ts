@@ -185,10 +185,10 @@ describe("Scheduler (unit)", () => {
       // syncSchedules calls getRepeatableJobs and then add for each scheduled job
       expect(mockQueue.getRepeatableJobs).toHaveBeenCalled();
       expect(mockQueue.add).toHaveBeenCalledWith(
-        "schedule:sync-on-init-job",
+        "schedule-sync-on-init-job",
         expect.objectContaining({ jobName: "sync-on-init-job" }),
         expect.objectContaining({
-          repeat: { pattern: "0 2 * * *" },
+          repeat: expect.objectContaining({ pattern: "0 2 * * *" }),
         }),
       );
     });
@@ -220,14 +220,18 @@ describe("Scheduler (unit)", () => {
       await syncSchedules();
 
       expect(mockQueue.add).toHaveBeenCalledWith(
-        "schedule:job-alpha",
+        "schedule-job-alpha",
         expect.objectContaining({ jobName: "job-alpha" }),
-        expect.objectContaining({ repeat: { pattern: "0 1 * * *" } }),
+        expect.objectContaining({
+          repeat: expect.objectContaining({ pattern: "0 1 * * *" }),
+        }),
       );
       expect(mockQueue.add).toHaveBeenCalledWith(
-        "schedule:job-beta",
+        "schedule-job-beta",
         expect.objectContaining({ jobName: "job-beta" }),
-        expect.objectContaining({ repeat: { pattern: "0 3 * * *" } }),
+        expect.objectContaining({
+          repeat: expect.objectContaining({ pattern: "0 3 * * *" }),
+        }),
       );
     });
 
@@ -236,7 +240,7 @@ describe("Scheduler (unit)", () => {
 
       // Simulate an existing repeatable in the queue
       mockQueue.getRepeatableJobs.mockResolvedValue([
-        { name: "schedule:existing-job", key: "repeat:existing-job:key", pattern: "0 1 * * *" },
+        { name: "schedule-existing-job", key: "repeat:existing-job:key", pattern: "0 1 * * *" },
       ]);
       mockQueue.add.mockClear();
 
@@ -251,9 +255,11 @@ describe("Scheduler (unit)", () => {
       );
       // Then the new schedule should be added
       expect(mockQueue.add).toHaveBeenCalledWith(
-        "schedule:existing-job",
+        "schedule-existing-job",
         expect.objectContaining({ jobName: "existing-job" }),
-        expect.objectContaining({ repeat: { pattern: "0 5 * * *" } }),
+        expect.objectContaining({
+          repeat: expect.objectContaining({ pattern: "0 5 * * *" }),
+        }),
       );
     });
 
@@ -262,7 +268,7 @@ describe("Scheduler (unit)", () => {
 
       // Simulate a repeatable that no longer has a corresponding config entry
       mockQueue.getRepeatableJobs.mockResolvedValue([
-        { name: "schedule:removed-job", key: "repeat:removed-key", pattern: "0 6 * * *" },
+        { name: "schedule-removed-job", key: "repeat:removed-key", pattern: "0 6 * * *" },
       ]);
 
       // Config is empty -- the job was removed
@@ -286,7 +292,7 @@ describe("Scheduler (unit)", () => {
       const scheduledNames = addCalls.map(
         (c: [string, ...any[]]) => c[0],
       );
-      expect(scheduledNames).not.toContain("schedule:no-schedule-job");
+      expect(scheduledNames).not.toContain("schedule-no-schedule-job");
     });
 
     it("throws if scheduler not initialized", async () => {
@@ -294,6 +300,37 @@ describe("Scheduler (unit)", () => {
       await stopScheduler();
 
       await expect(syncSchedules()).rejects.toThrow("Scheduler not initialized");
+    });
+
+    it("schedules multiple jobs with the same cron pattern using unique keys", async () => {
+      await initScheduler();
+      mockQueue.add.mockClear();
+
+      // Three jobs with the same cron schedule
+      addJobToConfig("job-a", { schedule: "0 2 * * *" });
+      addJobToConfig("job-b", { schedule: "0 2 * * *" });
+      addJobToConfig("job-c", { schedule: "0 2 * * *" });
+      addStorageToConfig();
+
+      await syncSchedules();
+
+      // All three jobs should be added with their own unique keys
+      expect(mockQueue.add).toHaveBeenCalledTimes(3);
+
+      // Verify each job has a unique repeat key
+      const addCalls = mockQueue.add.mock.calls;
+      const jobA = addCalls.find((c: [string]) => c[0] === "schedule-job-a");
+      const jobB = addCalls.find((c: [string]) => c[0] === "schedule-job-b");
+      const jobC = addCalls.find((c: [string]) => c[0] === "schedule-job-c");
+
+      expect(jobA).toBeDefined();
+      expect(jobB).toBeDefined();
+      expect(jobC).toBeDefined();
+
+      // Each should have a unique key to prevent deduplication
+      expect((jobA[2] as any).repeat.key).toBe("schedule-job-a");
+      expect((jobB[2] as any).repeat.key).toBe("schedule-job-b");
+      expect((jobC[2] as any).repeat.key).toBe("schedule-job-c");
     });
   });
 
@@ -317,7 +354,7 @@ describe("Scheduler (unit)", () => {
 
       // Verify backupQueue.add was called with the correct name pattern
       expect(mockQueue.add).toHaveBeenCalledWith(
-        "backup:manual-run",
+        "backup-manual-run",
         expect.objectContaining({
           executionId: result.executionId,
           jobName: "manual-run",
@@ -384,7 +421,7 @@ describe("Scheduler (unit)", () => {
       await queueJob("trigger-manual", "manual");
 
       expect(mockQueue.add).toHaveBeenCalledWith(
-        "backup:trigger-manual",
+        "backup-trigger-manual",
         expect.objectContaining({ triggeredBy: "manual" }),
         expect.any(Object),
       );
@@ -399,7 +436,7 @@ describe("Scheduler (unit)", () => {
       await queueJob("trigger-failover", "failover");
 
       expect(mockQueue.add).toHaveBeenCalledWith(
-        "backup:trigger-failover",
+        "backup-trigger-failover",
         expect.objectContaining({ triggeredBy: "failover" }),
         expect.any(Object),
       );
@@ -417,8 +454,8 @@ describe("Scheduler (unit)", () => {
       await initScheduler();
 
       mockQueue.getRepeatableJobs.mockResolvedValue([
-        { name: "schedule:sched-a", key: "k1", pattern: "0 2 * * *", next: Date.now() + 60000 },
-        { name: "schedule:sched-b", key: "k2", pattern: "0 4 * * *", next: Date.now() + 120000 },
+        { name: "schedule-sched-a", key: "k1", pattern: "0 2 * * *", next: Date.now() + 60000 },
+        { name: "schedule-sched-b", key: "k2", pattern: "0 4 * * *", next: Date.now() + 120000 },
       ]);
 
       const jobs = await getScheduledJobs();

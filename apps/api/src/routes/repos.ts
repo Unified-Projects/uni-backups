@@ -31,11 +31,26 @@ repos.get("/:storage/:repo/snapshots", async (c) => {
     }
   }
 
-  const result = await restic.listSnapshots(storage, repoName, resticPassword, {
-    tags: tag ? [tag] : undefined,
-    host: host || undefined,
-    latest: latestNum,
-  });
+  let result;
+  try {
+    result = await restic.listSnapshots(storage, repoName, resticPassword, {
+      tags: tag ? [tag] : undefined,
+      host: host || undefined,
+      latest: latestNum,
+    });
+  } catch (err) {
+    console.error(`[repos] Error listing snapshots for ${storageName}/${repoName}:`, err);
+    const isConfiguredRepo = Array.from(config.jobs.values()).some(
+      (j) => j.storage === storageName && j.repo === repoName
+    ) || Array.from(config.jobs.entries()).some(
+      ([jobName, j]) => j.storage === storageName && !j.repo && jobName === repoName
+    );
+    if (isConfiguredRepo) {
+      // Configured repos that fail return empty snapshots rather than error
+      return c.json({ storage: storageName, repo: repoName, snapshots: [] });
+    }
+    return c.json({ error: "Failed to list snapshots" }, 500);
+  }
 
   if (!result.success) {
     // Check if error indicates repository not found

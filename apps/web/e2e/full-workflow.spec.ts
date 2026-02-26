@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 const apiUrl = process.env.TEST_API_URL || "http://localhost:3001";
 
 test.describe("Complete Backup Workflow", () => {
-  test.setTimeout(120000); // 2 minute timeout for full workflow
+  test.setTimeout(300000); // 5 minute timeout for multiple backup runs
 
   test("end-to-end backup and verify workflow", async ({ request }) => {
     const healthResponse = await request.get(`${apiUrl}/health`);
@@ -92,6 +92,135 @@ test.describe("Complete Backup Workflow", () => {
 
     const latestSnapshot = snapshotsData.snapshots[0];
     expect(latestSnapshot.id).toBeDefined();
+  });
+
+  test("multiple backup runs accumulate snapshots", async ({ request }) => {
+    const jobsResponse = await request.get(`${apiUrl}/api/jobs`);
+    expect(jobsResponse.ok()).toBe(true);
+
+    const jobsData = await jobsResponse.json();
+    expect(jobsData.jobs.length).toBeGreaterThan(0);
+
+    const localJob =
+      jobsData.jobs.find((j: any) => j.name === "test-local-folder") ||
+      jobsData.jobs.find(
+        (j: any) =>
+          (j.type === "folder" || j.type === "volume") &&
+          j.storage.toLowerCase().includes("local") &&
+          j.name.startsWith("test-local")
+      );
+    const testJob = localJob || jobsData.jobs[0];
+
+    const storageResponse = await request.get(`${apiUrl}/api/storage`);
+    expect(storageResponse.ok()).toBe(true);
+
+    const storageData = await storageResponse.json();
+    const jobStorage = storageData.storage?.find(
+      (s: any) => s.name === testJob.storage
+    );
+    expect(jobStorage, `Storage ${testJob.storage} should exist`).toBeDefined();
+
+    // Get initial snapshot count
+    const initialSnapshotsResponse = await request.get(
+      `${apiUrl}/api/repos/${testJob.storage}/${testJob.repo || testJob.name}/snapshots`
+    );
+    expect(initialSnapshotsResponse.ok()).toBe(true);
+    const initialSnapshots = await initialSnapshotsResponse.json();
+    const initialCount = initialSnapshots.snapshots?.length || 0;
+
+    // Run backup twice to ensure we have at least 2 snapshots
+    const targetSnapshots = Math.max(2, initialCount + 2);
+    let runs = 0;
+    const maxRuns = 3;
+
+    while (runs < maxRuns) {
+      runs++;
+      console.log(`Running backup ${runs}/${maxRuns} to reach ${targetSnapshots} snapshots...`);
+
+      const runResponse = await request.post(
+        `${apiUrl}/api/jobs/${testJob.name}/run`,
+        { data: {} }
+      );
+      const runStatus = runResponse.status();
+      expect([200, 409]).toContain(runStatus);
+
+      // Wait for job to complete
+      let completed = false;
+      const maxWaitMs = 60000;
+      const pollIntervalMs = 2000;
+      const startTime = Date.now();
+
+      while (Date.now() - startTime < maxWaitMs) {
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+
+        const statusResponse = await request.get(`${apiUrl}/api/jobs/${testJob.name}`);
+        expect(statusResponse.ok()).toBe(true);
+
+        const statusData = await statusResponse.json();
+        const lastStatus = statusData.lastRun?.status;
+
+        if (lastStatus === "completed" || lastStatus === "success") {
+          completed = true;
+          break;
+        }
+
+        if (!statusData.isRunning && statusData.recentRuns?.length > 0) {
+          const recentStatus = statusData.recentRuns[0].status;
+          if (recentStatus === "completed" || recentStatus === "success") {
+            completed = true;
+            break;
+          }
+        }
+      }
+
+      expect(completed, `Backup run ${runs} should complete`).toBe(true);
+
+      // Check if we have enough snapshots
+      const snapshotsResponse = await request.get(
+        `${apiUrl}/api/repos/${testJob.storage}/${testJob.repo || testJob.name}/snapshots?latest=${targetSnapshots}`
+      );
+      expect(snapshotsResponse.ok()).toBe(true);
+      const snapshotsData = await snapshotsResponse.json();
+      const snapshotCount = snapshotsData.snapshots?.length || 0;
+
+      console.log(`After run ${runs}: ${snapshotCount} snapshots (target: ${targetSnapshots})`);
+
+      if (snapshotCount >= 2) {
+        // Verify we can get the latest 2+ snapshots
+        const latest2Response = await request.get(
+          `${apiUrl}/api/repos/${testJob.storage}/${testJob.repo || testJob.name}/snapshots?latest=2`
+        );
+        expect(latest2Response.ok()).toBe(true);
+        const latest2Data = await latest2Response.json();
+        expect(latest2Data.snapshots.length).toBeGreaterThanOrEqual(2);
+
+        // Verify each snapshot has required fields
+        for (const snapshot of latest2Data.snapshots) {
+          expect(snapshot.id).toBeDefined();
+          expect(snapshot.time).toBeDefined();
+          expect(snapshot.hostname).toBeDefined();
+          expect(snapshot.paths).toBeDefined();
+        }
+
+        // Verify snapshots have different IDs (not duplicates)
+        const ids = latest2Data.snapshots.map((s: any) => s.id);
+        const uniqueIds = new Set(ids);
+        expect(uniqueIds.size).toBe(latest2Data.snapshots.length);
+
+        break;
+      }
+
+      // Wait a bit between runs
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    // Final verification
+    const finalSnapshotsResponse = await request.get(
+      `${apiUrl}/api/repos/${testJob.storage}/${testJob.repo || testJob.name}/snapshots?latest=2`
+    );
+    expect(finalSnapshotsResponse.ok()).toBe(true);
+    const finalSnapshots = await finalSnapshotsResponse.json();
+    expect(finalSnapshots.snapshots.length, "Should have at least 2 snapshots after multiple runs").toBeGreaterThanOrEqual(2);
   });
 
   test("backup job execution tracking", async ({ request }) => {

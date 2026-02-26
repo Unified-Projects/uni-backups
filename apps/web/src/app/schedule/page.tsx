@@ -28,8 +28,15 @@ import {
 import { getSchedule } from "@/lib/api";
 import { formatDistanceToNow, formatDuration } from "@/lib/utils";
 
-function StatusBadge({ status }: { status: "running" | "success" | "failed" }) {
+function StatusBadge({ status }: { status: "pending" | "running" | "completed" | "success" | "failed" }) {
   switch (status) {
+    case "pending":
+      return (
+        <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500">
+          <Clock className="mr-1 h-3 w-3" />
+          Pending
+        </Badge>
+      );
     case "running":
       return (
         <Badge variant="outline" className="bg-blue-500/10 text-blue-500">
@@ -37,6 +44,7 @@ function StatusBadge({ status }: { status: "running" | "success" | "failed" }) {
           Running
         </Badge>
       );
+    case "completed":
     case "success":
       return (
         <Badge variant="outline" className="bg-green-500/10 text-green-500">

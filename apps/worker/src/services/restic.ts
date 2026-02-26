@@ -308,6 +308,9 @@ export async function listSnapshots(
   if (result.success) {
     try {
       const snapshots = JSON.parse(result.stdout) as ResticSnapshot[];
+      if (snapshots === null) {
+        return { success: true, snapshots: [] };
+      }
       return { success: true, snapshots };
     } catch {
       return { success: true, snapshots: [] };

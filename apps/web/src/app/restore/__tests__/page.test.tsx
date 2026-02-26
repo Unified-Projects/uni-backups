@@ -19,6 +19,16 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+// Mock next/navigation with custom search params
+const mockSearchParams = new URLSearchParams();
+vi.mock("next/navigation", async () => {
+  const actual = await vi.importActual("next/navigation");
+  return {
+    ...actual,
+    useSearchParams: () => mockSearchParams,
+  };
+});
+
 const mockToast = vi.fn();
 vi.mock("@uni-backups/ui/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
@@ -54,6 +64,7 @@ describe("RestorePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockToast.mockClear();
+    mockSearchParams.forEach((_, key) => mockSearchParams.delete(key));
   });
 
   describe("loading state", () => {
@@ -816,6 +827,81 @@ describe("RestorePage", () => {
             variant: "destructive",
           })
         );
+      });
+    });
+  });
+
+  describe("target path pre-population", () => {
+    it("pre-fills target path from URL path parameter", async () => {
+      const mockStorage: { storage: Storage[] } = {
+        storage: [{ name: "local", type: "local", path: "/backups" }],
+      };
+      const mockOperations: { operations: RestoreOperation[] } = { operations: [] };
+
+      vi.mocked(getStorage).mockResolvedValue(mockStorage);
+      vi.mocked(getRestoreOperations).mockResolvedValue(mockOperations);
+
+      mockSearchParams.set("storage", "local");
+      mockSearchParams.set("repo", "repo1");
+      mockSearchParams.set("snapshot", "abc123de");
+      mockSearchParams.set("path", "/data/important.txt");
+
+      render(
+        <TestWrapper>
+          <RestorePage />
+        </TestWrapper>
+      );
+
+      // Wait for the form to render
+      await waitFor(() => {
+        const targetPathInput = screen.getByLabelText(/target path/i) as HTMLInputElement;
+        expect(targetPathInput).toBeInTheDocument();
+        expect(targetPathInput.value).toBe("/data/important.txt");
+      });
+    });
+
+    it("clears target path when storage changes", async () => {
+      const mockStorage: { storage: Storage[] } = {
+        storage: [
+          { name: "local", type: "local", path: "/backups" },
+          { name: "s3", type: "s3", bucket: "backups" },
+        ],
+      };
+      const mockRepos = { storage: "local", repos: ["repo1"] };
+      const mockOperations: { operations: RestoreOperation[] } = { operations: [] };
+
+      vi.mocked(getStorage).mockResolvedValue(mockStorage);
+      vi.mocked(getStorageRepos).mockResolvedValue(mockRepos);
+      vi.mocked(getRestoreOperations).mockResolvedValue(mockOperations);
+
+      // Pre-populate with a path
+      mockSearchParams.set("storage", "local");
+      mockSearchParams.set("repo", "repo1");
+      mockSearchParams.set("snapshot", "abc123de");
+      mockSearchParams.set("path", "/data/important.txt");
+
+      render(
+        <TestWrapper>
+          <RestorePage />
+        </TestWrapper>
+      );
+
+      // Verify initial target path is populated
+      await waitFor(() => {
+        const targetPathInput = screen.getByLabelText(/target path/i) as HTMLInputElement;
+        expect(targetPathInput.value).toBe("/data/important.txt");
+      });
+
+      // Change storage
+      const storageTrigger = screen.getByRole("combobox", { name: /storage/i });
+      fireEvent.click(storageTrigger);
+      const s3Option = await screen.findByRole("option", { name: "s3" });
+      fireEvent.click(s3Option);
+
+      // Verify target path is cleared
+      await waitFor(() => {
+        const targetPathInput = screen.getByLabelText(/target path/i) as HTMLInputElement;
+        expect(targetPathInput.value).toBe("");
       });
     });
   });

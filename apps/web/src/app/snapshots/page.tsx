@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import {
@@ -63,9 +63,15 @@ function FileBrowser({
 }) {
   const [currentPath, setCurrentPath] = useState("/");
 
+  // Reset to root when snapshot changes
+  useEffect(() => {
+    setCurrentPath("/");
+  }, [snapshotId]);
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["snapshot-files", storage, repo, snapshotId, currentPath],
     queryFn: () => listSnapshotFiles(storage, repo, snapshotId, currentPath),
+    staleTime: 0, // Always fetch fresh data when navigating
   });
 
   const navigateTo = (path: string) => {
@@ -99,7 +105,13 @@ function FileBrowser({
     );
   }
 
-  const entries = data?.entries || [];
+  const entries = (data?.entries || [])
+    .filter((e) => e.name && e.name.trim()) // Filter empty names
+    .filter((e) => {
+      // Filter entries with invalid dates (epoch 0, invalid dates)
+      const date = new Date(e.mtime);
+      return !isNaN(date.getTime()) && date.getTime() > 0;
+    });
   const dirs = entries.filter((e) => e.type === "dir").sort((a, b) => a.name.localeCompare(b.name));
   const files = entries.filter((e) => e.type !== "dir").sort((a, b) => a.name.localeCompare(b.name));
   const sortedEntries = [...dirs, ...files];

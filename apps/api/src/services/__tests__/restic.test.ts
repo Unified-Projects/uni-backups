@@ -468,14 +468,27 @@ describe("restic service", () => {
       vi.clearAllMocks();
     });
 
-    it("returns snapshots list", async () => {
+    it("returns snapshots list from JSON array (single snapshot)", async () => {
       const { listSnapshots } = await import("../restic");
-      const snapshots = [
-        { id: "abc123", short_id: "abc123", time: "2024-01-01T00:00:00Z" },
-        { id: "def456", short_id: "def456", time: "2024-01-02T00:00:00Z" },
-      ];
+      const jsonOutput = JSON.stringify([{ id: "abc123", short_id: "abc123", time: "2024-01-01T00:00:00Z", hostname: "server1", username: "root", paths: ["/data"], tags: ["daily"], program_version: "0.16.4" }]);
       vi.mocked(spawn).mockReturnValue(
-        createMockProcess(JSON.stringify(snapshots), "", 0) as any
+        createMockProcess(jsonOutput, "", 0) as any
+      );
+
+      const result = await listSnapshots(localStorage, "test-repo", "password");
+
+      expect(result.success).toBe(true);
+      expect(result.snapshots).toHaveLength(1);
+      expect(result.snapshots![0].id).toBe("abc123");
+    });
+
+    it("returns snapshots list from JSON array (multiple snapshots)", async () => {
+      const { listSnapshots } = await import("../restic");
+      const snapshot1 = { id: "abc123", short_id: "abc123", time: "2024-01-01T00:00:00Z", hostname: "server1", username: "root", paths: ["/data"], tags: ["daily"], program_version: "0.16.4" };
+      const snapshot2 = { id: "def456", short_id: "def456", time: "2024-01-02T00:00:00Z", hostname: "server2", username: "root", paths: ["/var"], tags: ["weekly"], program_version: "0.16.4" };
+      const jsonOutput = JSON.stringify([snapshot1, snapshot2]);
+      vi.mocked(spawn).mockReturnValue(
+        createMockProcess(jsonOutput, "", 0) as any
       );
 
       const result = await listSnapshots(localStorage, "test-repo", "password");
@@ -483,6 +496,7 @@ describe("restic service", () => {
       expect(result.success).toBe(true);
       expect(result.snapshots).toHaveLength(2);
       expect(result.snapshots![0].id).toBe("abc123");
+      expect(result.snapshots![1].id).toBe("def456");
     });
 
     it("filters by tags", async () => {
@@ -546,8 +560,8 @@ describe("restic service", () => {
       const result = await listSnapshots(localStorage, "test-repo", "password");
 
       expect(result.success).toBe(true);
-      // JSON.parse("null") returns null, which is what the function returns
-      expect(result.snapshots).toBeNull();
+      // Restic returns the literal "null" for empty repositories, which we convert to an empty array
+      expect(result.snapshots).toEqual([]);
     });
 
     it("handles failure", async () => {

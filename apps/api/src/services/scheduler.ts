@@ -62,17 +62,23 @@ export async function syncSchedules(): Promise<void> {
   const existingJobNames = new Set(existingRepeatables.map((r) => r.name));
 
   console.log(`[Scheduler] Syncing schedules, found ${existingRepeatables.length} existing repeatables`);
+  for (const r of existingRepeatables) {
+    console.log(`[Scheduler] Existing repeatable: name=${r.name}, key=${r.key}, next=${r.next}`);
+  }
 
   for (const [jobName, jobConfig] of config.jobs) {
     if (jobConfig.schedule) {
+      const repeatKey = `schedule-${jobName}`;
+
       // Remove existing schedule if any (to update it)
-      const existingKey = existingRepeatables.find((r) => r.name === `schedule:${jobName}`)?.key;
+      const existingKey = existingRepeatables.find((r) => r.name === `schedule-${jobName}`)?.key;
       if (existingKey) {
+        console.log(`[Scheduler] Removing existing schedule for "${jobName}" with key: ${existingKey}`);
         await backupQueue.removeRepeatableByKey(existingKey);
       }
 
       await backupQueue.add(
-        `schedule:${jobName}`,
+        `schedule-${jobName}`,
         {
           executionId: "", // Will be set when job actually runs
           jobName,
@@ -85,19 +91,21 @@ export async function syncSchedules(): Promise<void> {
           queuedAt: 0, // Will be set when job actually runs
         },
         {
-          repeat: { pattern: jobConfig.schedule },
-          jobId: `schedule:${jobName}`,
+          repeat: {
+            pattern: jobConfig.schedule,
+            key: repeatKey,
+          },
           priority: jobConfig.priority,
         }
       );
 
-      console.log(`[Scheduler] Scheduled job "${jobName}" with cron: ${jobConfig.schedule}`);
+      console.log(`[Scheduler] Scheduled job "${jobName}" with cron: ${jobConfig.schedule}, key: ${repeatKey}`);
     }
   }
 
   for (const repeatable of existingRepeatables) {
-    if (repeatable.name?.startsWith("schedule:")) {
-      const jobName = repeatable.name.slice("schedule:".length);
+    if (repeatable.name?.startsWith("schedule-")) {
+      const jobName = repeatable.name.slice("schedule-".length);
       const jobConfig = config.jobs.get(jobName);
 
       if (!jobConfig || !jobConfig.schedule) {
@@ -147,7 +155,7 @@ export async function queueJob(
   };
 
   try {
-    await backupQueue.add(`backup:${jobName}`, jobData, {
+    await backupQueue.add(`backup-${jobName}`, jobData, {
       jobId: executionId,
       priority: jobConfig.priority,
     });
@@ -208,7 +216,7 @@ export async function getScheduledJobs(): Promise<
 
   for (const [jobName, jobConfig] of config.jobs) {
     if (jobConfig.schedule) {
-      const repeatable = repeatables.find((r) => r.name === `schedule:${jobName}`);
+      const repeatable = repeatables.find((r) => r.name === `schedule-${jobName}`);
       results.push({
         name: jobName,
         schedule: jobConfig.schedule,

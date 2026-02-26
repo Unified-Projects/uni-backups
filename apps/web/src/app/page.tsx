@@ -43,7 +43,7 @@ function JobStatusBadge({ job }: { job: Job }) {
     );
   }
 
-  if (job.lastRun.status === "success") {
+  if (job.lastRun.status === "completed" || job.lastRun.status === "success") {
     return (
       <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
         <CheckCircle className="mr-1 h-3 w-3" />
@@ -68,7 +68,7 @@ function DashboardStats({
   storage: Storage[];
 }) {
   const runningCount = jobs.filter((j) => j.isRunning).length;
-  const successCount = jobs.filter((j) => j.lastRun?.status === "success").length;
+  const successCount = jobs.filter((j) => j.lastRun?.status === "completed" || j.lastRun?.status === "success").length;
   const _failedCount = jobs.filter((j) => j.lastRun?.status === "failed").length;
 
   const stats = [

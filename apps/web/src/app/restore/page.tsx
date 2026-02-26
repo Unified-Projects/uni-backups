@@ -84,7 +84,7 @@ function RestoreContent() {
   const [repo, setRepo] = useState(searchParams.get("repo") || "");
   const [snapshot, setSnapshot] = useState(searchParams.get("snapshot") || "");
   const [method, setMethod] = useState<"download" | "path">("download");
-  const [targetPath, setTargetPath] = useState("");
+  const [targetPath, setTargetPath] = useState(searchParams.get("path") || "");
   const [paths, setPaths] = useState(searchParams.get("path") || "");
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -227,6 +227,7 @@ function RestoreContent() {
                     setStorage(e.target.value);
                     setRepo("");
                     setSnapshot("");
+                    setTargetPath("");
                   }}
                   aria-label="Storage backend"
                 >
@@ -241,6 +242,7 @@ function RestoreContent() {
                     setStorage(v);
                     setRepo("");
                     setSnapshot("");
+                    setTargetPath("");
                   }}
                 >
                   <SelectTrigger>
@@ -263,6 +265,7 @@ function RestoreContent() {
                   onValueChange={(v) => {
                     setRepo(v);
                     setSnapshot("");
+                    setTargetPath("");
                   }}
                   disabled={!storage}
                 >

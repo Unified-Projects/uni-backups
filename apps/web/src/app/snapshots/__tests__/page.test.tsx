@@ -907,6 +907,114 @@ describe("SnapshotsPage", () => {
 
       expect(await screen.findByText("Restore")).toBeInTheDocument();
     });
+
+    it("filters out entries with empty names", async () => {
+      const mockStorage: { storage: Storage[] } = {
+        storage: [{ name: "local", type: "local", path: "/backups" }],
+      };
+
+      const mockRepos = { storage: "local", repos: ["repo1"] };
+
+      const mockSnapshots = {
+        storage: "local",
+        repo: "repo1",
+        snapshots: [
+          {
+            id: "abc123def456",
+            short_id: "abc123de",
+            time: "2024-01-15T10:00:00Z",
+            hostname: "server1",
+            paths: ["/data"],
+            tags: null,
+          },
+        ],
+      };
+
+      const mockFiles = {
+        storage: "local",
+        repo: "repo1",
+        snapshotId: "abc123de",
+        path: "/",
+        entries: [
+          { name: "", type: "file" as const, path: "/empty", size: 0, mtime: "2024-01-15T10:00:00Z" },
+          { name: "   ", type: "file" as const, path: "/whitespace", size: 0, mtime: "2024-01-15T10:00:00Z" },
+          { name: "valid.txt", type: "file" as const, path: "/valid.txt", size: 1024, mtime: "2024-01-15T10:00:00Z" },
+        ],
+      };
+
+      vi.mocked(getStorage).mockResolvedValue(mockStorage);
+      vi.mocked(getStorageRepos).mockResolvedValue(mockRepos);
+      vi.mocked(getSnapshots).mockResolvedValue(mockSnapshots);
+      vi.mocked(listSnapshotFiles).mockResolvedValue(mockFiles);
+
+      mockSearchParams.set("storage", "local");
+      mockSearchParams.set("repo", "repo1");
+      mockSearchParams.set("id", "abc123de");
+
+      render(
+        <TestWrapper>
+          <SnapshotsPage />
+        </TestWrapper>
+      );
+
+      expect(await screen.findByText("valid.txt")).toBeInTheDocument();
+      expect(screen.queryByText("empty")).not.toBeInTheDocument();
+      expect(screen.queryByText("whitespace")).not.toBeInTheDocument();
+    });
+
+    it("filters out entries with invalid dates", async () => {
+      const mockStorage: { storage: Storage[] } = {
+        storage: [{ name: "local", type: "local", path: "/backups" }],
+      };
+
+      const mockRepos = { storage: "local", repos: ["repo1"] };
+
+      const mockSnapshots = {
+        storage: "local",
+        repo: "repo1",
+        snapshots: [
+          {
+            id: "abc123def456",
+            short_id: "abc123de",
+            time: "2024-01-15T10:00:00Z",
+            hostname: "server1",
+            paths: ["/data"],
+            tags: null,
+          },
+        ],
+      };
+
+      const mockFiles = {
+        storage: "local",
+        repo: "repo1",
+        snapshotId: "abc123de",
+        path: "/",
+        entries: [
+          { name: "epoch.txt", type: "file" as const, path: "/epoch.txt", size: 0, mtime: "1970-01-01T00:00:00Z" },
+          { name: "invalid.txt", type: "file" as const, path: "/invalid.txt", size: 0, mtime: "invalid-date" },
+          { name: "valid.txt", type: "file" as const, path: "/valid.txt", size: 1024, mtime: "2024-01-15T10:00:00Z" },
+        ],
+      };
+
+      vi.mocked(getStorage).mockResolvedValue(mockStorage);
+      vi.mocked(getStorageRepos).mockResolvedValue(mockRepos);
+      vi.mocked(getSnapshots).mockResolvedValue(mockSnapshots);
+      vi.mocked(listSnapshotFiles).mockResolvedValue(mockFiles);
+
+      mockSearchParams.set("storage", "local");
+      mockSearchParams.set("repo", "repo1");
+      mockSearchParams.set("id", "abc123de");
+
+      render(
+        <TestWrapper>
+          <SnapshotsPage />
+        </TestWrapper>
+      );
+
+      expect(await screen.findByText("valid.txt")).toBeInTheDocument();
+      expect(screen.queryByText("epoch.txt")).not.toBeInTheDocument();
+      expect(screen.queryByText("invalid.txt")).not.toBeInTheDocument();
+    });
   });
 
   describe("URL pre-population", () => {
