@@ -89,7 +89,7 @@ describe("Jobs CRUD E2E Tests", () => {
       await page.locator('button:has-text("Add Retention")').click();
       await page.locator('input[name="retention.daily"]').fill("7");
 
-      await page.locator('button:has-text("Save")').click();
+      await page.locator('[data-testid="job-form-save"]').click();
 
       await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
     });
@@ -102,7 +102,7 @@ describe("Jobs CRUD E2E Tests", () => {
       await page.locator('input[name="source"]').fill("/backups/source/s3-test");
       await page.locator('select[name="storage"]').selectOption("s3-backup");
 
-      await page.locator('button:has-text("Save")').click();
+      await page.locator('[data-testid="job-form-save"]').click();
 
       await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
     });
@@ -118,7 +118,7 @@ describe("Jobs CRUD E2E Tests", () => {
       await page.locator('input[name="user"]').fill("backup_user");
       await page.locator('select[name="storage"]').selectOption("s3-backup");
 
-      await page.locator('button:has-text("Save")').click();
+      await page.locator('[data-testid="job-form-save"]').click();
 
       await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
     });
@@ -132,7 +132,7 @@ describe("Jobs CRUD E2E Tests", () => {
       await page.locator('input[name="host"]').fill("mariadb.example.com");
       await page.locator('select[name="storage"]').selectOption("sftp-storage");
 
-      await page.locator('button:has-text("Save")').click();
+      await page.locator('[data-testid="job-form-save"]').click();
 
       await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
     });
@@ -146,7 +146,7 @@ describe("Jobs CRUD E2E Tests", () => {
       await page.locator('input[name="port"]').fill("6379");
       await page.locator('select[name="storage"]').selectOption("local-storage");
 
-      await page.locator('button:has-text("Save")').click();
+      await page.locator('[data-testid="job-form-save"]').click();
 
       await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
     });
@@ -159,7 +159,7 @@ describe("Jobs CRUD E2E Tests", () => {
       await page.locator('input[name="source"]').fill("/backups/source/local-test");
       await page.locator('select[name="storage"]').selectOption("s3-backup");
 
-      await page.locator('button:has-text("Save")').click();
+      await page.locator('[data-testid="job-form-save"]').click();
 
       await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
     });
@@ -167,7 +167,7 @@ describe("Jobs CRUD E2E Tests", () => {
     test("should validate required fields", async ({ page }) => {
       await page.locator('button:has-text("Create Job")').click();
 
-      await page.locator('button:has-text("Save")').click();
+      await page.locator('[data-testid="job-form-save"]').click();
 
       await expect(page.locator('[data-testid="error-name"]')).toBeVisible();
       await expect(page.locator('[data-testid="error-type"]')).toBeVisible();
@@ -182,7 +182,7 @@ describe("Jobs CRUD E2E Tests", () => {
       await page.locator('input[name="source"]').fill("/backups/source/s3-test");
       await page.locator('select[name="storage"]').selectOption("non-existent-storage");
 
-      await page.locator('button:has-text("Save")').click();
+      await page.locator('[data-testid="job-form-save"]').click();
 
       await expect(page.locator('[data-testid="error-storage"]')).toContainText(/not found/i);
     });
@@ -383,7 +383,7 @@ describe("Jobs CRUD E2E Tests", () => {
 
       await page.locator('input[name="schedule"]').fill("invalid-cron");
 
-      await page.locator('button:has-text("Save")').click();
+      await page.locator('[data-testid="job-form-save"]').click();
 
       await expect(page.locator('[data-testid="error-schedule"]')).toBeVisible();
     });
@@ -399,7 +399,7 @@ describe("Jobs CRUD E2E Tests", () => {
       await page.locator('button:has-text("Add Exclude")').click();
       await page.locator('input[name="exclude.0"]').fill("*.log");
 
-      await page.locator('button:has-text("Save")').click();
+      await page.locator('[data-testid="job-form-save"]').click();
 
       await expect(page.locator('[data-testid="success-message"]')).toBeVisible();
     });

@@ -42,6 +42,8 @@ import {
   Trash2,
   Plus,
   Filter,
+  Loader2,
+  Save,
 } from "lucide-react";
 import {
   getJobs,
@@ -51,6 +53,8 @@ import {
   createJob,
   updateJobConfig,
   deleteJob,
+  getConfigDirty,
+  saveConfigToFile,
   type Job,
 } from "@/lib/api";
 import { formatDistanceToNow } from "@/lib/utils";
@@ -83,7 +87,7 @@ function JobStatusBadge({ job }: { job: Job }) {
       </Badge>
     );
   }
-  if (job.lastRun.status === "success") {
+  if (job.lastRun.status === "completed" || job.lastRun.status === "success") {
     return (
       <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
         <CheckCircle className="mr-1 h-3 w-3" />
@@ -493,8 +497,10 @@ function JobFormDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isPending}>
-            {isPending ? "Saving..." : isEdit ? "Update" : "Save"}
+          <Button data-testid="job-form-save" onClick={handleSubmit} disabled={isPending}>
+            {isPending ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEdit ? "Updating..." : "Saving..."}</>
+            ) : (isEdit ? "Update" : "Save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -545,7 +551,9 @@ function DeleteConfirmDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button variant="destructive" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
-            Delete
+            {deleteMutation.isPending ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Deleting...</>
+            ) : "Delete"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -599,7 +607,9 @@ function RunConfirmDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
-            Run
+            {runMutation.isPending ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Running...</>
+            ) : "Run"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -695,12 +705,32 @@ export default function JobsPage() {
     queryFn: getStorage,
   });
 
+  const { data: dirtyData, refetch: refetchDirty } = useQuery({
+    queryKey: ["jobs-config-dirty"],
+    queryFn: getConfigDirty,
+    refetchInterval: 5000,
+  });
+
+  const isDirty = dirtyData?.dirty ?? false;
+
+  const saveMutation = useMutation({
+    mutationFn: saveConfigToFile,
+    onSuccess: (data) => {
+      refetchDirty();
+      handleSuccess(data.message);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to save config", variant: "destructive" });
+    },
+  });
+
   const storageNames = storageData?.storage.map((s) => s.name) || [];
 
   function handleSuccess(message: string) {
     setSuccessMsg(message);
     toast({ title: "Success", description: message, variant: "success" });
     setTimeout(() => setSuccessMsg(""), 5000);
+    refetchDirty();
   }
 
   if (isLoading) {
@@ -752,10 +782,25 @@ export default function JobsPage() {
                 {pagination?.total || allJobs.length} backup job{(pagination?.total || allJobs.length) !== 1 ? "s" : ""} configured
               </CardDescription>
             </div>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Job
-            </Button>
+            <div className="flex items-center gap-2">
+              {isDirty && (
+                <Button
+                  variant="outline"
+                  onClick={() => saveMutation.mutate()}
+                  disabled={saveMutation.isPending}
+                >
+                  {saveMutation.isPending ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
+                  ) : (
+                    <><Save className="mr-2 h-4 w-4" />Save to Config</>
+                  )}
+                </Button>
+              )}
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Job
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -860,20 +905,21 @@ export default function JobsPage() {
                           <History className="mr-1 h-4 w-4" />
                           History
                         </Button>
-                        {!runOpen && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={job.isRunning}
-                            onClick={() => {
-                              setRunJob2(job);
-                              setRunOpen(true);
-                            }}
-                          >
-                            <Play className="mr-1 h-4 w-4" />
-                            {job.isRunning ? "Running..." : "Run Now"}
-                          </Button>
-                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={job.isRunning || (runOpen && runJob2?.name === job.name)}
+                          onClick={() => {
+                            setRunJob2(job);
+                            setRunOpen(true);
+                          }}
+                        >
+                          {runOpen && runJob2?.name === job.name ? (
+                            <><Loader2 className="mr-1 h-4 w-4 animate-spin" />Running...</>
+                          ) : (
+                            <><Play className="mr-1 h-4 w-4" />{job.isRunning ? "Running..." : "Run Now"}</>
+                          )}
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"

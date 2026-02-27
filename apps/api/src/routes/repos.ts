@@ -15,9 +15,6 @@ repos.get("/:storage/:repo/snapshots", async (c) => {
 
   const config = getConfig();
   const resticPassword = config.resticPassword;
-  if (!resticPassword) {
-    return c.json({ error: "Restic password not configured" }, 500);
-  }
 
   const tag = c.req.query("tag");
   const host = c.req.query("host");
@@ -46,14 +43,12 @@ repos.get("/:storage/:repo/snapshots", async (c) => {
       ([jobName, j]) => j.storage === storageName && !j.repo && jobName === repoName
     );
     if (isConfiguredRepo) {
-      // Configured repos that fail return empty snapshots rather than error
       return c.json({ storage: storageName, repo: repoName, snapshots: [] });
     }
     return c.json({ error: "Failed to list snapshots" }, 500);
   }
 
   if (!result.success) {
-    // Check if error indicates repository not found
     const notFoundIndicators = [
       "does not exist",
       "not exist",
@@ -72,7 +67,6 @@ repos.get("/:storage/:repo/snapshots", async (c) => {
       ([jobName, j]) => j.storage === storageName && !j.repo && jobName === repoName
     );
     if (isConfiguredRepo) {
-      // Configured repos that fail (not found, network error, etc.) return empty snapshots
       return c.json({ storage: storageName, repo: repoName, snapshots: [] });
     }
     if (isNotFound || !message) {
@@ -106,15 +100,10 @@ repos.get("/:storage/:repo/snapshots/:id", async (c) => {
     return c.json({ error: `Storage "${storageName}" not found` }, 404);
   }
 
-  const config = getConfig();
-  const resticPassword = config.resticPassword;
-  if (!resticPassword) {
-    return c.json({ error: "Restic password not configured" }, 500);
-  }
+  const resticPassword = getConfig().resticPassword;
 
   const result = await restic.listSnapshots(storage, repoName, resticPassword);
   if (!result.success) {
-    // Check if error indicates repository not found
     const notFoundIndicators = [
       "does not exist",
       "not exist",
@@ -163,12 +152,7 @@ repos.get("/:storage/:repo/snapshots/:id/ls", async (c) => {
     return c.json({ error: `Storage "${storageName}" not found` }, 404);
   }
 
-  const config = getConfig();
-  const resticPassword = config.resticPassword;
-  if (!resticPassword) {
-    return c.json({ error: "Restic password not configured" }, 500);
-  }
-
+  const resticPassword = getConfig().resticPassword;
   const path = c.req.query("path");
 
   let result = await restic.listFiles(
@@ -180,9 +164,6 @@ repos.get("/:storage/:repo/snapshots/:id/ls", async (c) => {
   );
 
   if (!result.success) {
-    // Check if the error is a definitive "not found" before retrying.
-    // Transient failures (e.g. concurrent backup briefly making pack files
-    // unreadable) can resolve on a second attempt.
     const notFoundIndicators = [
       "does not exist",
       "not exist",
@@ -199,7 +180,6 @@ repos.get("/:storage/:repo/snapshots/:id/ls", async (c) => {
       result.message.toLowerCase().includes(indicator.toLowerCase())
     );
     if (!isNotFound) {
-      // Retry once after a short delay before returning a 500.
       await new Promise((resolve) => setTimeout(resolve, 2000));
       result = await restic.listFiles(
         storage,
@@ -257,14 +237,10 @@ repos.get("/:storage/:repo/stats", async (c) => {
 
   const config = getConfig();
   const resticPassword = config.resticPassword;
-  if (!resticPassword) {
-    return c.json({ error: "Restic password not configured" }, 500);
-  }
 
   const result = await restic.stats(storage, repoName, resticPassword);
 
   if (!result.success) {
-    // Check if error indicates repository not found
     const notFoundIndicators = [
       "does not exist",
       "not exist",
@@ -310,11 +286,7 @@ repos.post("/:storage/:repo/check", async (c) => {
     return c.json({ error: `Storage "${storageName}" not found` }, 404);
   }
 
-  const config = getConfig();
-  const resticPassword = config.resticPassword;
-  if (!resticPassword) {
-    return c.json({ error: "Restic password not configured" }, 500);
-  }
+  const resticPassword = getConfig().resticPassword;
 
   const rawReadData = c.req.query("readData");
   if (rawReadData !== undefined && rawReadData !== "true" && rawReadData !== "false") {
@@ -327,7 +299,6 @@ repos.post("/:storage/:repo/check", async (c) => {
   });
 
   if (!result.success) {
-    // A locked repo means it is actively in use (healthy) — treat as success
     const lockIndicators = ["already locked", "lock", "locked by"];
     const isLocked = lockIndicators.some((indicator) =>
       result.message.toLowerCase().includes(indicator.toLowerCase())
@@ -341,7 +312,6 @@ repos.post("/:storage/:repo/check", async (c) => {
       });
     }
 
-    // Return 404 when the repo doesn't exist
     const notFoundIndicators = [
       "does not exist",
       "not exist",
@@ -376,11 +346,7 @@ repos.post("/:storage/:repo/unlock", async (c) => {
     return c.json({ error: `Storage "${storageName}" not found` }, 404);
   }
 
-  const config = getConfig();
-  const resticPassword = config.resticPassword;
-  if (!resticPassword) {
-    return c.json({ error: "Restic password not configured" }, 500);
-  }
+  const resticPassword = getConfig().resticPassword;
 
   const result = await restic.unlock(storage, repoName, resticPassword);
 

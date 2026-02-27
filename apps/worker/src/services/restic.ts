@@ -62,17 +62,23 @@ export function buildRepoUrl(storage: StorageConfig, repoName: string): string {
 
     case "local":
       return `${storage.path}/${repoName}`;
+
+    case "rclone":
+      const rclonePath = storage.path ? `${storage.path.replace(/\/$/, "")}` : "";
+      return `rclone:${storage.remote}:${rclonePath ? rclonePath + "/" + repoName : repoName}`;
   }
 }
 
 export function buildResticEnv(
   storage: StorageConfig,
-  resticPassword: string
+  resticPassword?: string
 ): Record<string, string> {
+  const effectivePassword = storage.restic_password || resticPassword || "";
+  const effectiveCacheDir = storage.cache_dir || RESTIC_CACHE_DIR;
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
-    RESTIC_PASSWORD: resticPassword,
-    RESTIC_CACHE_DIR,
+    RESTIC_PASSWORD: effectivePassword,
+    RESTIC_CACHE_DIR: effectiveCacheDir,
   };
 
   switch (storage.type) {
@@ -109,6 +115,18 @@ export function buildResticEnv(
       if (storage.user && storage.password) {
         env.RESTIC_REST_USERNAME = storage.user;
         env.RESTIC_REST_PASSWORD = storage.password;
+      }
+      break;
+
+    case "rclone":
+      if (storage.config_file) {
+        env.RCLONE_CONFIG = storage.config_file;
+      }
+      if (storage.config) {
+        const remoteKey = storage.remote.toUpperCase().replace(/-/g, "_");
+        for (const [key, value] of Object.entries(storage.config)) {
+          env[`RCLONE_CONFIG_${remoteKey}_${key.toUpperCase()}`] = value;
+        }
       }
       break;
   }
@@ -187,7 +205,7 @@ async function runRestic(
 export async function initRepo(
   storage: StorageConfig,
   repoName: string,
-  resticPassword: string
+  resticPassword?: string
 ): Promise<{ success: boolean; message: string; alreadyExists?: boolean }> {
   const repoUrl = buildRepoUrl(storage, repoName);
   const env = buildResticEnv(storage, resticPassword);
@@ -219,7 +237,7 @@ export async function initRepo(
 export async function backup(
   storage: StorageConfig,
   repoName: string,
-  resticPassword: string,
+  resticPassword?: string,
   sourcePath: string,
   options?: {
     tags?: string[];
@@ -272,7 +290,7 @@ export async function backup(
 export async function listSnapshots(
   storage: StorageConfig,
   repoName: string,
-  resticPassword: string,
+  resticPassword?: string,
   options?: {
     tags?: string[];
     host?: string;
@@ -323,7 +341,7 @@ export async function listSnapshots(
 export async function prune(
   storage: StorageConfig,
   repoName: string,
-  resticPassword: string,
+  resticPassword?: string,
   retention: Retention,
   options?: {
     tags?: string[];
@@ -370,7 +388,7 @@ export async function prune(
 export async function check(
   storage: StorageConfig,
   repoName: string,
-  resticPassword: string,
+  resticPassword?: string,
   options?: {
     readData?: boolean;
   }
@@ -396,7 +414,7 @@ export async function check(
 export async function restore(
   storage: StorageConfig,
   repoName: string,
-  resticPassword: string,
+  resticPassword?: string,
   snapshotId: string,
   targetPath: string,
   options?: {
@@ -438,7 +456,7 @@ export async function restore(
 export async function unlock(
   storage: StorageConfig,
   repoName: string,
-  resticPassword: string
+  resticPassword?: string
 ): Promise<{ success: boolean; message: string }> {
   const repoUrl = buildRepoUrl(storage, repoName);
   const env = buildResticEnv(storage, resticPassword);
@@ -455,7 +473,7 @@ export async function unlock(
 export async function stats(
   storage: StorageConfig,
   repoName: string,
-  resticPassword: string
+  resticPassword?: string
 ): Promise<{ success: boolean; stats?: ResticStats; message?: string }> {
   const repoUrl = buildRepoUrl(storage, repoName);
   const env = buildResticEnv(storage, resticPassword);

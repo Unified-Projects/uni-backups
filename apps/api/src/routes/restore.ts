@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { createReadStream, existsSync, mkdirSync, statSync, unlinkSync } from "fs";
+import { Readable } from "stream";
 import { join } from "path";
 import { spawn } from "child_process";
 import { getStorage, getConfig, getTempDir } from "@uni-backups/shared/config";
@@ -236,12 +237,14 @@ restore.get("/:id/download", async (c) => {
   const stat = statSync(operation.archivePath);
   const filename = `restore-${operation.snapshotId.slice(0, 8)}.tar.gz`;
 
-  const stream = createReadStream(operation.archivePath);
+  const nodeStream = createReadStream(operation.archivePath);
+  const webStream = Readable.toWeb(nodeStream) as ReadableStream;
 
   c.header("Content-Type", "application/gzip");
   c.header("Content-Disposition", `attachment; filename="${filename}"`);
   c.header("Content-Length", stat.size.toString());
 
+  // Clean up archive after a delay to allow the download to complete
   setTimeout(() => {
     try {
       if (operation.archivePath && existsSync(operation.archivePath)) {
@@ -251,9 +254,9 @@ restore.get("/:id/download", async (c) => {
     } catch {
       // Ignore cleanup errors
     }
-  }, 60000); // 1 minute delay
+  }, 300000); // 5 minutes to allow large file downloads to complete
 
-  return c.body(stream as unknown as ReadableStream);
+  return c.body(webStream);
 });
 
 restore.get("/", (c) => {

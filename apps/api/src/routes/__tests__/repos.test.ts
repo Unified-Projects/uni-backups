@@ -302,19 +302,26 @@ describe("Repos API Routes", () => {
       expect(json.error).toContain("not found");
     });
 
-    it("returns 500 when restic password not configured", async () => {
+    it("proceeds without a global restic password, passing undefined as fallback", async () => {
       mockStorage();
       vi.mocked(getConfig).mockReturnValue({
         resticPassword: undefined,
         jobs: new Map(),
         storage: new Map(),
       });
+      vi.mocked(restic.stats).mockResolvedValue({
+        success: true,
+        stats: { total_size: 0, total_file_count: 0, snapshots_count: 0 },
+      });
 
       const res = await app.request("/repos/local/test-repo/stats");
-      const json = await res.json();
 
-      expect(res.status).toBe(500);
-      expect(json.error).toContain("password");
+      expect(res.status).toBe(200);
+      expect(vi.mocked(restic.stats)).toHaveBeenCalledWith(
+        expect.any(Object),
+        "test-repo",
+        undefined
+      );
     });
 
     it("includes all stats fields in response", async () => {
@@ -401,19 +408,27 @@ describe("Repos API Routes", () => {
       expect(json.error).toContain("not found");
     });
 
-    it("returns 500 when restic password not configured", async () => {
+    it("proceeds without a global restic password, passing undefined as fallback", async () => {
       mockStorage();
       vi.mocked(getConfig).mockReturnValue({
         resticPassword: undefined,
         jobs: new Map(),
         storage: new Map(),
       });
+      vi.mocked(restic.check).mockResolvedValue({
+        success: true,
+        message: "OK",
+      });
 
       const res = await app.request("/repos/local/test-repo/check", { method: "POST" });
-      const json = await res.json();
 
-      expect(res.status).toBe(500);
-      expect(json.error).toContain("password");
+      expect(res.status).toBe(200);
+      expect(vi.mocked(restic.check)).toHaveBeenCalledWith(
+        expect.any(Object),
+        "test-repo",
+        undefined,
+        expect.any(Object)
+      );
     });
 
     it("includes storage and repo in response", async () => {
@@ -475,19 +490,26 @@ describe("Repos API Routes", () => {
       expect(res.status).toBe(404);
     });
 
-    it("returns 500 when restic password not configured", async () => {
+    it("proceeds without a global restic password, passing undefined as fallback", async () => {
       mockStorage();
       vi.mocked(getConfig).mockReturnValue({
         resticPassword: undefined,
         jobs: new Map(),
         storage: new Map(),
       });
+      vi.mocked(restic.unlock).mockResolvedValue({
+        success: true,
+        message: "No locks found",
+      });
 
       const res = await app.request("/repos/local/test-repo/unlock", { method: "POST" });
-      const json = await res.json();
 
-      expect(res.status).toBe(500);
-      expect(json.error).toContain("password");
+      expect(res.status).toBe(200);
+      expect(vi.mocked(restic.unlock)).toHaveBeenCalledWith(
+        expect.any(Object),
+        "test-repo",
+        undefined
+      );
     });
 
     it("includes unlock message in response", async () => {

@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 
 vi.mock("fs", () => ({
   existsSync: vi.fn(),
   readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
 }));
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockReadFileSync = vi.mocked(readFileSync);
+const mockWriteFileSync = vi.mocked(writeFileSync);
 
 describe("loader module", () => {
   const originalEnv = process.env;
@@ -17,6 +19,7 @@ describe("loader module", () => {
     process.env = { ...originalEnv };
     mockExistsSync.mockReset();
     mockReadFileSync.mockReset();
+    mockWriteFileSync.mockReset();
     mockExistsSync.mockReturnValue(false);
   });
 
@@ -56,7 +59,7 @@ jobs:
     schedule: "0 3 * * *"
 
 restic:
-  password: my-restic-password
+  restic_password: my-restic-password
   cache_dir: /var/cache/restic
 `;
 
@@ -102,7 +105,7 @@ jobs:
     storage: s3
 
 restic:
-  password_file: /run/secrets/restic_password
+  restic_password_file: /run/secrets/restic_password
 `;
 
       mockExistsSync.mockImplementation((path) => {
@@ -319,6 +322,99 @@ jobs:
       expect(all).toHaveLength(1);
       expect(all[0].name).toBe("backup");
       expect(all[0].config.type).toBe("folder");
+    });
+  });
+
+  describe("dirty flag and saveConfig", () => {
+    it("isConfigDirty returns false on fresh load", async () => {
+      const { isConfigDirty, resetConfigCache } = await import("../loader");
+      resetConfigCache();
+
+      expect(isConfigDirty()).toBe(false);
+    });
+
+    it("isConfigDirty returns true after addJob", async () => {
+      const { addJob, isConfigDirty, resetConfigCache } = await import("../loader");
+      resetConfigCache();
+
+      addJob("new-job", { type: "folder", source: "/data", storage: "local" });
+
+      expect(isConfigDirty()).toBe(true);
+    });
+
+    it("isConfigDirty returns true after updateJob", async () => {
+      const { updateJob, isConfigDirty, resetConfigCache } = await import("../loader");
+      resetConfigCache();
+
+      updateJob("backup", { type: "folder", source: "/updated", storage: "local" });
+
+      expect(isConfigDirty()).toBe(true);
+    });
+
+    it("isConfigDirty returns true after removeJob", async () => {
+      const { removeJob, isConfigDirty, resetConfigCache } = await import("../loader");
+      resetConfigCache();
+
+      removeJob("backup");
+
+      expect(isConfigDirty()).toBe(true);
+    });
+
+    it("saveConfig writes updated jobs to config file", async () => {
+      process.env.UNI_BACKUPS_CONFIG_FILE = "/etc/uni-backups/config.yml";
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(`
+storage:
+  local:
+    type: local
+    path: /backups
+jobs:
+  backup:
+    type: folder
+    source: /data
+    storage: local
+`);
+
+      const { addJob, saveConfig, isConfigDirty, resetConfigCache } = await import("../loader");
+      resetConfigCache();
+
+      addJob("new-job", { type: "folder", source: "/new", storage: "local" });
+      expect(isConfigDirty()).toBe(true);
+
+      saveConfig();
+
+      expect(mockWriteFileSync).toHaveBeenCalledOnce();
+      const [path, content] = mockWriteFileSync.mock.calls[0];
+      expect(path).toBe("/etc/uni-backups/config.yml");
+      expect(content).toContain("new-job");
+      expect(content).toContain("backup");
+      expect(content).toContain("local"); // storage section preserved
+      expect(isConfigDirty()).toBe(false);
+    });
+
+    it("saveConfig throws when no config file is configured", async () => {
+      delete process.env.UNI_BACKUPS_CONFIG_FILE;
+
+      const { saveConfig, resetConfigCache } = await import("../loader");
+      resetConfigCache();
+
+      expect(() => saveConfig()).toThrow("No config file path configured");
+    });
+
+    it("saveConfig clears dirty flag on success", async () => {
+      process.env.UNI_BACKUPS_CONFIG_FILE = "/etc/uni-backups/config.yml";
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue("storage: {}\njobs: {}\n");
+
+      const { addJob, saveConfig, isConfigDirty, resetConfigCache } = await import("../loader");
+      resetConfigCache();
+
+      addJob("job1", { type: "folder", source: "/x", storage: "local" });
+      expect(isConfigDirty()).toBe(true);
+
+      saveConfig();
+
+      expect(isConfigDirty()).toBe(false);
     });
   });
 });

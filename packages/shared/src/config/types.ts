@@ -1,7 +1,13 @@
 import { z } from "zod";
 
-export const StorageType = z.enum(["sftp", "s3", "rest", "local"]);
+export const StorageType = z.enum(["sftp", "s3", "rest", "local", "rclone"]);
 export type StorageType = z.infer<typeof StorageType>;
+
+const ResticStorageMixin = z.object({
+  restic_password: z.string().optional(),
+  restic_password_file: z.string().optional(),
+  cache_dir: z.string().optional(),
+});
 
 export const SftpStorageSchema = z.object({
   type: z.literal("sftp"),
@@ -12,7 +18,7 @@ export const SftpStorageSchema = z.object({
   password_file: z.string().optional(),
   key_file: z.string().optional(),
   path: z.string().default("/"),
-});
+}).merge(ResticStorageMixin);
 
 export const S3StorageSchema = z.object({
   type: z.literal("s3"),
@@ -24,7 +30,7 @@ export const S3StorageSchema = z.object({
   secret_key: z.string().optional(),
   secret_key_file: z.string().optional(),
   path: z.string().default(""), // Prefix within bucket
-});
+}).merge(ResticStorageMixin);
 
 export const RestStorageSchema = z.object({
   type: z.literal("rest"),
@@ -32,18 +38,27 @@ export const RestStorageSchema = z.object({
   user: z.string().optional(),
   password: z.string().optional(),
   password_file: z.string().optional(),
-});
+}).merge(ResticStorageMixin);
 
 export const LocalStorageSchema = z.object({
   type: z.literal("local"),
   path: z.string(),
-});
+}).merge(ResticStorageMixin);
+
+export const RCloneStorageSchema = z.object({
+  type: z.literal("rclone"),
+  remote: z.string(),
+  path: z.string().default(""),
+  config_file: z.string().optional(),
+  config: z.record(z.string(), z.string()).optional(),
+}).merge(ResticStorageMixin);
 
 export const StorageConfigSchema = z.discriminatedUnion("type", [
   SftpStorageSchema,
   S3StorageSchema,
   RestStorageSchema,
   LocalStorageSchema,
+  RCloneStorageSchema,
 ]);
 
 export type StorageConfig = z.infer<typeof StorageConfigSchema>;
@@ -51,6 +66,7 @@ export type SftpStorage = z.infer<typeof SftpStorageSchema>;
 export type S3Storage = z.infer<typeof S3StorageSchema>;
 export type RestStorage = z.infer<typeof RestStorageSchema>;
 export type LocalStorage = z.infer<typeof LocalStorageSchema>;
+export type RCloneStorage = z.infer<typeof RCloneStorageSchema>;
 
 export const JobType = z.enum(["volume", "folder", "postgres", "mariadb", "redis"]);
 export type JobType = z.infer<typeof JobType>;
@@ -149,8 +165,8 @@ export const ConfigFileSchema = z.object({
   worker_groups: z.record(z.string(), WorkerGroupSchema).optional(),
   redis: RedisConfigSchema.optional(),
   restic: z.object({
-    password: z.string().optional(),
-    password_file: z.string().optional(),
+    restic_password: z.string().optional(),
+    restic_password_file: z.string().optional(),
     cache_dir: z.string().optional(),
   }).optional(),
 });

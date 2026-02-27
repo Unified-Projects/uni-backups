@@ -56,4 +56,6 @@ export {
   addJob,
   updateJob,
   removeJob,
+  isConfigDirty,
+  saveConfig,
 } from "./loader";

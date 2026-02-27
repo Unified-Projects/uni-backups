@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-02-27
+
+### Added
+
+- RClone storage backend support with `type: rclone` in storage config
+- Inline rclone config via `config` key/value map (injected as `RCLONE_CONFIG_*` env vars at runtime, no rclone.conf required)
+- Per-storage restic password fields: `restic_password`, `restic_password_file`, `cache_dir` on all storage types
+- New API endpoints: `GET /jobs/config/dirty` and `POST /jobs/config/save`
+- "Save to Config" button in Jobs page when in-memory config has unsaved changes (polls dirty flag every 5 seconds)
+- "Use source path" shortcut button on Restore page to auto-populate target path from backup source
+- Loading spinners on Save, Delete, Run, and Update buttons during pending mutations
+- File browser loading overlay with spinner during directory navigation (preserves current listing while fetching)
+- `data-testid` attributes on file browser table and breadcrumb for E2E targeting
+- `isConfigDirty()` and `saveConfig()` exported from shared config loader
+- Integration test suite for rclone storage backend
+- E2E `FileBrowserNavigation Isolation` test suite
+
+### Fixed
+
+- Restore download endpoint: properly converts Node.js `ReadableStream` to Web `ReadableStream` via `Readable.toWeb()`
+- API no longer returns HTTP 500 when no global restic password is configured; storage-level password is used as fallback
+- Archive cleanup delay increased from 1 minute to 5 minutes to accommodate large downloads
+
+### Changed
+
+- `restic.password` renamed to `restic.restic_password` in `backups.yml`
+- `restic.password_file` renamed to `restic.restic_password_file` in `backups.yml`
+- Repo stats timeout (`REPO_TIMEOUT_MS`) increased from 4 seconds to 150 seconds
+- API client fetch timeout increased to 150 seconds via `AbortController`
+- Snapshot timestamps now show time of day (`toLocaleString()` instead of `toLocaleDateString()`)
+- `rclone` added to Dockerfile installs for API, worker, and test images
+
 ## [0.1.2] - 2026-02-26
 
 ### Fixed

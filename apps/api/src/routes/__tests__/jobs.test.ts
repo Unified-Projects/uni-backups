@@ -8,6 +8,11 @@ vi.mock("@uni-backups/shared/config", () => ({
   getJob: vi.fn(),
   getStorage: vi.fn(),
   getConfig: vi.fn(),
+  addJob: vi.fn(),
+  updateJob: vi.fn(),
+  removeJob: vi.fn(),
+  isConfigDirty: vi.fn(),
+  saveConfig: vi.fn(),
 }));
 
 vi.mock("../../services/scheduler", () => ({
@@ -22,7 +27,7 @@ vi.mock("../../services/restic", () => ({
   listSnapshots: vi.fn(),
 }));
 
-import { getAllJobs, getJob, getStorage, getConfig } from "@uni-backups/shared/config";
+import { getAllJobs, getJob, getStorage, getConfig, isConfigDirty, saveConfig } from "@uni-backups/shared/config";
 import { queueJob, getRecentRuns, isJobActive, getRunningJobs, getQueueStats } from "../../services/scheduler";
 import * as restic from "../../services/restic";
 
@@ -303,7 +308,7 @@ describe("Jobs API Routes", () => {
       expect(json.error).toContain("Storage");
     });
 
-    it("returns 500 when restic password not configured", async () => {
+    it("proceeds without a global restic password, passing undefined as fallback", async () => {
       vi.mocked(getJob).mockReturnValue({
         type: "folder",
         source: "/data",
@@ -318,12 +323,17 @@ describe("Jobs API Routes", () => {
         jobs: new Map(),
         storage: new Map(),
       });
+      vi.mocked(restic.listSnapshots).mockResolvedValue({ success: true, snapshots: [] });
 
       const res = await app.request("/jobs/test-job/history");
-      const json = await res.json();
 
-      expect(res.status).toBe(500);
-      expect(json.error).toContain("password");
+      expect(res.status).toBe(200);
+      expect(vi.mocked(restic.listSnapshots)).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.any(String),
+        undefined,
+        expect.any(Object)
+      );
     });
   });
 
@@ -879,6 +889,164 @@ describe("Jobs API Routes", () => {
 
       expect(res.status).toBe(200);
       expect(json.jobs).toEqual([]);
+    });
+  });
+
+  describe("GET /jobs/:name/history", () => {
+    it("returns snapshots for a job", async () => {
+      vi.mocked(getJob).mockReturnValue({
+        type: "folder",
+        source: "/data",
+        storage: "local",
+        repo: "my-repo",
+      });
+      vi.mocked(getStorage).mockReturnValue({ type: "local", path: "/backups" });
+      vi.mocked(getConfig).mockReturnValue({
+        jobs: new Map(),
+        storage: new Map(),
+        workerGroups: new Map(),
+        resticPassword: "secret",
+        resticCacheDir: "/tmp/cache",
+      });
+      vi.mocked(restic.listSnapshots).mockResolvedValue({
+        success: true,
+        snapshots: [
+          {
+            id: "abc123full",
+            short_id: "abc123",
+            time: "2024-01-01T00:00:00Z",
+            hostname: "host1",
+            paths: ["/data"],
+            tags: ["my-job"],
+          },
+        ],
+      });
+
+      const res = await app.request("/jobs/my-job/history");
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.snapshots).toHaveLength(1);
+      expect(json.snapshots[0].short_id).toBe("abc123");
+    });
+
+    it("works without a global restic password when storage has its own", async () => {
+      vi.mocked(getJob).mockReturnValue({
+        type: "folder",
+        source: "/data",
+        storage: "local",
+        repo: "my-repo",
+      });
+      vi.mocked(getStorage).mockReturnValue({
+        type: "local",
+        path: "/backups",
+        restic_password: "per-storage-secret",
+      });
+      vi.mocked(getConfig).mockReturnValue({
+        jobs: new Map(),
+        storage: new Map(),
+        workerGroups: new Map(),
+        resticPassword: undefined,
+        resticCacheDir: "/tmp/cache",
+      });
+      vi.mocked(restic.listSnapshots).mockResolvedValue({
+        success: true,
+        snapshots: [],
+      });
+
+      const res = await app.request("/jobs/my-job/history");
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(restic.listSnapshots)).toHaveBeenCalledWith(
+        expect.objectContaining({ restic_password: "per-storage-secret" }),
+        "my-repo",
+        undefined,
+        expect.any(Object)
+      );
+    });
+
+    it("returns 404 when job does not exist", async () => {
+      vi.mocked(getJob).mockReturnValue(undefined);
+
+      const res = await app.request("/jobs/missing-job/history");
+      const json = await res.json();
+
+      expect(res.status).toBe(404);
+      expect(json.error).toMatch(/not found/i);
+    });
+
+    it("returns 500 when storage is missing", async () => {
+      vi.mocked(getJob).mockReturnValue({
+        type: "folder",
+        source: "/data",
+        storage: "missing-storage",
+      });
+      vi.mocked(getStorage).mockReturnValue(undefined);
+
+      const res = await app.request("/jobs/my-job/history");
+      const json = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(json.error).toMatch(/storage.*not found/i);
+    });
+  });
+
+  describe("GET /jobs/config/dirty", () => {
+    it("returns dirty: false when config has not been modified", async () => {
+      vi.mocked(isConfigDirty).mockReturnValue(false);
+
+      const res = await app.request("/jobs/config/dirty");
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.dirty).toBe(false);
+    });
+
+    it("returns dirty: true after a job mutation", async () => {
+      vi.mocked(isConfigDirty).mockReturnValue(true);
+
+      const res = await app.request("/jobs/config/dirty");
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.dirty).toBe(true);
+    });
+  });
+
+  describe("POST /jobs/config/save", () => {
+    it("saves config and returns success", async () => {
+      vi.mocked(saveConfig).mockImplementation(() => {});
+
+      const res = await app.request("/jobs/config/save", { method: "POST" });
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(vi.mocked(saveConfig)).toHaveBeenCalledOnce();
+    });
+
+    it("returns 500 when saveConfig throws", async () => {
+      vi.mocked(saveConfig).mockImplementation(() => {
+        throw new Error("Config file is read-only");
+      });
+
+      const res = await app.request("/jobs/config/save", { method: "POST" });
+      const json = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(json.error).toBe("Config file is read-only");
+    });
+
+    it("returns 500 with generic message when error has no message", async () => {
+      vi.mocked(saveConfig).mockImplementation(() => {
+        throw "unknown error";
+      });
+
+      const res = await app.request("/jobs/config/save", { method: "POST" });
+      const json = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(json.error).toBe("Failed to save config");
     });
   });
 });

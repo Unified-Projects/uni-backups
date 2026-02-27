@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { getAllJobs, getJob, getStorage, getConfig, addJob, updateJob, removeJob } from "@uni-backups/shared/config";
+import { getAllJobs, getJob, getStorage, getConfig, addJob, updateJob, removeJob, isConfigDirty, saveConfig } from "@uni-backups/shared/config";
 import { JobConfigSchema } from "@uni-backups/shared/config";
 import {
   queueJob,
@@ -250,13 +250,8 @@ jobs.get("/:name/history", async (c) => {
     return c.json({ error: `Storage "${jobConfig.storage}" not found` }, 500);
   }
 
-  const config = getConfig();
-  const resticPassword = config.resticPassword;
-  if (!resticPassword) {
-    return c.json({ error: "Restic password not configured" }, 500);
-  }
-
   const repoName = jobConfig.repo || name;
+  const resticPassword = getConfig().resticPassword;
 
   const result = await restic.listSnapshots(storage, repoName, resticPassword, {
     tags: [name],
@@ -397,6 +392,20 @@ jobs.delete("/:name", async (c) => {
   syncSchedules().catch(() => {});
 
   return c.json({ name, status: "deleted", message: `Job "${name}" deleted successfully` });
+});
+
+jobs.get("/config/dirty", (c) => {
+  return c.json({ dirty: isConfigDirty() });
+});
+
+jobs.post("/config/save", async (c) => {
+  try {
+    saveConfig();
+    return c.json({ success: true, message: "Config saved successfully" });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to save config";
+    return c.json({ error: msg }, 500);
+  }
 });
 
 export default jobs;

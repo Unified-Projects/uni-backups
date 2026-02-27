@@ -181,7 +181,7 @@ describe("Storage API Routes", () => {
       expect(json.error).toContain("not found");
     });
 
-    it("returns 500 when restic password not configured", async () => {
+    it("proceeds without a global restic password, passing undefined as fallback", async () => {
       vi.mocked(getStorage).mockReturnValue({
         type: "local",
         path: "/backups",
@@ -191,12 +191,19 @@ describe("Storage API Routes", () => {
         jobs: new Map(),
         storage: new Map(),
       });
+      vi.mocked(restic.initRepo).mockResolvedValue({
+        success: true,
+        message: "Repository already initialized",
+      });
 
       const res = await app.request("/storage/local-storage/status");
-      const json = await res.json();
 
-      expect(res.status).toBe(500);
-      expect(json.error).toContain("password");
+      expect(res.status).toBe(200);
+      expect(vi.mocked(restic.initRepo)).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.any(String),
+        undefined
+      );
     });
 
     it("returns error status when connection fails", async () => {
@@ -321,7 +328,7 @@ describe("Storage API Routes", () => {
       expect(json.error).toContain("not found");
     });
 
-    it("returns 500 when restic password not configured", async () => {
+    it("proceeds without a global restic password, passing undefined as fallback", async () => {
       vi.mocked(getStorage).mockReturnValue({
         type: "local",
         path: "/backups",
@@ -333,10 +340,9 @@ describe("Storage API Routes", () => {
       });
 
       const res = await app.request("/storage/local-storage/stats");
-      const json = await res.json();
 
-      expect(res.status).toBe(500);
-      expect(json.error).toContain("password");
+      expect(res.status).toBe(200);
+      expect(res.ok).toBe(true);
     });
 
     it("handles repo not initialized error gracefully", async () => {

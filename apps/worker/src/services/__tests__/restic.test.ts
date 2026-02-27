@@ -178,6 +178,39 @@ describe("Restic Service", () => {
       const result = buildRepoUrl(storage, "test-repo");
       expect(result).toBe("/data/backups/test-repo");
     });
+
+    it("builds rclone URL with path", () => {
+      const storage: StorageConfig = {
+        type: "rclone",
+        remote: "myremote",
+        path: "backups",
+      };
+
+      const result = buildRepoUrl(storage, "my-repo");
+      expect(result).toBe("rclone:myremote:backups/my-repo");
+    });
+
+    it("builds rclone URL without path", () => {
+      const storage: StorageConfig = {
+        type: "rclone",
+        remote: "myremote",
+        path: "",
+      };
+
+      const result = buildRepoUrl(storage, "my-repo");
+      expect(result).toBe("rclone:myremote:my-repo");
+    });
+
+    it("builds rclone URL and strips trailing slash from path", () => {
+      const storage: StorageConfig = {
+        type: "rclone",
+        remote: "myremote",
+        path: "backups/",
+      };
+
+      const result = buildRepoUrl(storage, "my-repo");
+      expect(result).toBe("rclone:myremote:backups/my-repo");
+    });
   });
 
   describe("buildResticEnv", () => {
@@ -298,6 +331,113 @@ describe("Restic Service", () => {
 
       expect(env.RESTIC_REST_USERNAME).toBeUndefined();
       expect(env.RESTIC_REST_PASSWORD).toBeUndefined();
+    });
+
+    it("sets RCLONE_CONFIG when config_file is provided", () => {
+      const storage: StorageConfig = {
+        type: "rclone",
+        remote: "gdrive",
+        path: "",
+        config_file: "/run/secrets/rclone.conf",
+      };
+
+      const env = buildResticEnv(storage, "restic-password");
+      expect(env.RCLONE_CONFIG).toBe("/run/secrets/rclone.conf");
+    });
+
+    it("sets RCLONE_CONFIG_<REMOTE>_<KEY> vars when inline config is provided", () => {
+      const storage: StorageConfig = {
+        type: "rclone",
+        remote: "b2",
+        path: "",
+        config: {
+          type: "b2",
+          account: "my-account",
+          key: "my-key",
+        },
+      };
+
+      const env = buildResticEnv(storage, "restic-password");
+      expect(env.RCLONE_CONFIG_B2_TYPE).toBe("b2");
+      expect(env.RCLONE_CONFIG_B2_ACCOUNT).toBe("my-account");
+      expect(env.RCLONE_CONFIG_B2_KEY).toBe("my-key");
+    });
+
+    it("handles remote names with hyphens (converts to underscores)", () => {
+      const storage: StorageConfig = {
+        type: "rclone",
+        remote: "my-remote",
+        path: "",
+        config: {
+          type: "drive",
+          client_id: "xxx",
+        },
+      };
+
+      const env = buildResticEnv(storage, "restic-password");
+      expect(env.RCLONE_CONFIG_MY_REMOTE_TYPE).toBe("drive");
+      expect(env.RCLONE_CONFIG_MY_REMOTE_CLIENT_ID).toBe("xxx");
+    });
+
+    it("does not set rclone env vars when no config is provided", () => {
+      const storage: StorageConfig = {
+        type: "rclone",
+        remote: "myremote",
+        path: "",
+      };
+
+      const env = buildResticEnv(storage, "restic-password");
+      expect(env.RCLONE_CONFIG).toBeUndefined();
+      const rcloneConfigKeys = Object.keys(env).filter(
+        (k) => k.startsWith("RCLONE_CONFIG_")
+      );
+      expect(rcloneConfigKeys).toHaveLength(0);
+    });
+
+    it("uses storage-level restic_password over fallback", () => {
+      const storage: StorageConfig = {
+        type: "local",
+        path: "/backups",
+        restic_password: "per-storage-password",
+      };
+
+      const env = buildResticEnv(storage, "global-fallback-password");
+      expect(env.RESTIC_PASSWORD).toBe("per-storage-password");
+    });
+
+    it("falls back to passed resticPassword when storage has no restic_password", () => {
+      const storage: StorageConfig = {
+        type: "local",
+        path: "/backups",
+      };
+
+      const env = buildResticEnv(storage, "global-fallback-password");
+      expect(env.RESTIC_PASSWORD).toBe("global-fallback-password");
+    });
+
+    it("uses storage-level cache_dir over default", () => {
+      const storage: StorageConfig = {
+        type: "local",
+        path: "/backups",
+        cache_dir: "/custom/cache",
+      };
+
+      const env = buildResticEnv(storage);
+      expect(env.RESTIC_CACHE_DIR).toBe("/custom/cache");
+    });
+
+    it("works with no resticPassword arg when storage provides restic_password", () => {
+      const storage: StorageConfig = {
+        type: "sftp",
+        host: "backup.example.com",
+        port: 22,
+        user: "backup",
+        path: "/backups",
+        restic_password: "storage-own-password",
+      };
+
+      const env = buildResticEnv(storage);
+      expect(env.RESTIC_PASSWORD).toBe("storage-own-password");
     });
   });
 

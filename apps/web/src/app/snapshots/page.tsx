@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import {
   Card,
@@ -34,6 +34,7 @@ import {
   ChevronRight,
   ArrowUp,
   Download,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -68,10 +69,11 @@ function FileBrowser({
     setCurrentPath("/");
   }, [snapshotId]);
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isFetching, isError, error } = useQuery({
     queryKey: ["snapshot-files", storage, repo, snapshotId, currentPath],
     queryFn: () => listSnapshotFiles(storage, repo, snapshotId, currentPath),
     staleTime: 0, // Always fetch fresh data when navigating
+    placeholderData: keepPreviousData,
   });
 
   const navigateTo = (path: string) => {
@@ -118,7 +120,7 @@ function FileBrowser({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-1 text-sm">
+      <div className="flex items-center gap-1 text-sm" data-testid="file-browser-breadcrumb">
         <Button
           variant="ghost"
           size="sm"
@@ -144,7 +146,13 @@ function FileBrowser({
         ))}
       </div>
 
-      <div className="rounded-lg border">
+      <div className="relative" data-testid="file-browser-table">
+        {isFetching && !isLoading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/60 backdrop-blur-sm">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
+        <div className="rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -215,6 +223,7 @@ function FileBrowser({
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     </div>
   );
@@ -312,7 +321,10 @@ function SnapshotsContent() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Snapshot</label>
+              <label className="text-sm font-medium flex items-center gap-2">
+                Snapshot
+                {snapshotsLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+              </label>
               <Select
                 value={selectedSnapshot}
                 onValueChange={setSelectedSnapshot}
@@ -327,7 +339,7 @@ function SnapshotsContent() {
                       <div className="flex items-center gap-2">
                         <span className="font-mono">{s.short_id}</span>
                         <span className="text-muted-foreground">
-                          {new Date(s.time).toLocaleDateString()}
+                          {new Date(s.time).toLocaleString()}
                         </span>
                       </div>
                     </SelectItem>

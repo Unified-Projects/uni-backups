@@ -31,6 +31,10 @@ storage.get("/", (c) => {
       ...(config.type === "local" && {
         path: config.path,
       }),
+      ...(config.type === "rclone" && {
+        remote: config.remote,
+        path: config.path,
+      }),
     })),
   });
 });
@@ -43,13 +47,7 @@ storage.get("/:name/status", async (c) => {
     return c.json({ error: `Storage "${name}" not found` }, 404);
   }
 
-  const config = getConfig();
-  const resticPassword = config.resticPassword;
-
-  if (!resticPassword) {
-    return c.json({ error: "Restic password not configured" }, 500);
-  }
-
+  const resticPassword = getConfig().resticPassword;
   const testRepoName = "_connection_test";
 
   try {
@@ -133,10 +131,6 @@ storage.get("/:name/stats", async (c) => {
   const config = getConfig();
   const resticPassword = config.resticPassword;
 
-  if (!resticPassword) {
-    return c.json({ error: "Restic password not configured" }, 500);
-  }
-
   const repos = new Set<string>();
   for (const [jobName, jobConfig] of config.jobs) {
     if (jobConfig.storage === name) {
@@ -144,8 +138,8 @@ storage.get("/:name/stats", async (c) => {
     }
   }
 
-  // Timeout for each repo stats check (4 seconds to avoid client socket timeouts)
-  const REPO_TIMEOUT_MS = 4000;
+  // Timeout for each repo stats check (150 seconds to match frontend timeout)
+  const REPO_TIMEOUT_MS = 150000;
 
   const repoStatsPromises = Array.from(repos).map(async (repoName) => {
     try {

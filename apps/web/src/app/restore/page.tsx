@@ -30,7 +30,9 @@ import {
   XCircle,
   Loader2,
   AlertTriangle,
+  Copy,
 } from "lucide-react";
+import { Progress } from "@uni-backups/ui/components/progress";
 import {
   getStorage,
   getStorageRepos,
@@ -295,7 +297,7 @@ function RestoreContent() {
                   <SelectContent>
                     {snapshots.map((s) => (
                       <SelectItem key={s.id} value={s.short_id}>
-                        {s.short_id} - {new Date(s.time).toLocaleDateString()}
+                        {s.short_id} - {new Date(s.time).toLocaleString()}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -338,7 +340,21 @@ function RestoreContent() {
               </RadioGroup>
 
               <div className="space-y-2">
-                <Label>Target Path</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Target Path</Label>
+                  {paths && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs text-muted-foreground"
+                      onClick={() => setTargetPath(paths.split(",")[0].trim())}
+                    >
+                      <Copy className="mr-1 h-3 w-3" />
+                      Use source path
+                    </Button>
+                  )}
+                </div>
                 <Input
                   name="targetPath"
                   value={targetPath}
@@ -384,11 +400,29 @@ function RestoreContent() {
             )}
 
             {activeRestoreStatus && (
-              <div className="rounded-lg border p-4 space-y-2">
+              <div className="rounded-lg border p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">Restore in progress</span>
+                  <span className="font-medium">
+                    {activeRestoreStatus.status === "completed"
+                      ? "Restore complete"
+                      : activeRestoreStatus.status === "failed"
+                      ? "Restore failed"
+                      : "Restore in progress"}
+                  </span>
                   <RestoreStatusBadge status={activeRestoreStatus.status} />
                 </div>
+
+                {activeRestoreStatus.status === "pending" || activeRestoreStatus.status === "running" ? (
+                  <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+                    <div className="absolute h-full w-1/3 animate-progress-slide rounded-full bg-primary" />
+                  </div>
+                ) : (
+                  <Progress
+                    value={activeRestoreStatus.status === "completed" ? 100 : 0}
+                    className={activeRestoreStatus.status === "failed" ? "[&>div]:bg-destructive" : ""}
+                  />
+                )}
+
                 {activeRestoreStatus.message && (
                   <p className="text-sm text-muted-foreground">
                     {activeRestoreStatus.message}
@@ -428,20 +462,30 @@ function RestoreContent() {
                 {operations.map((op) => (
                   <div
                     key={op.id}
-                    className="flex items-center justify-between rounded-lg border p-3"
+                    className="rounded-lg border p-3 space-y-2"
                   >
-                    <div className="space-y-1">
-                      <p className="font-medium font-mono text-sm">
-                        {op.snapshotId.slice(0, 8)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {op.storage}/{op.repo}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(op.startTime).toLocaleString()}
-                      </p>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <p className="font-medium font-mono text-sm">
+                          {op.snapshotId.slice(0, 8)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {op.storage}/{op.repo}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(op.startTime).toLocaleString()}
+                        </p>
+                      </div>
+                      <RestoreStatusBadge status={op.status} />
                     </div>
-                    <RestoreStatusBadge status={op.status} />
+                    {(op.status === "pending" || op.status === "running") && (
+                      <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                        <div className="absolute h-full w-1/3 animate-progress-slide rounded-full bg-primary" />
+                      </div>
+                    )}
+                    {op.status === "completed" && (
+                      <Progress value={100} className="h-1.5" />
+                    )}
                   </div>
                 ))}
               </div>

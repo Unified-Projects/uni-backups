@@ -794,7 +794,7 @@ describe("Configuration Comprehensive Tests", () => {
           password: "redis-pass",
         },
         restic: {
-          password: "restic-password",
+          restic_password: "restic-password",
           cache_dir: "/cache",
         },
       };
@@ -807,7 +807,7 @@ describe("Configuration Comprehensive Tests", () => {
       expect(result.jobs["database"].type).toBe("postgres");
       expect(result.worker_groups?.default.workers).toHaveLength(2);
       expect(result.redis?.host).toBe("redis.example.com");
-      expect(result.restic?.password).toBe("restic-password");
+      expect(result.restic?.restic_password).toBe("restic-password");
     });
 
     it("validates job storage reference exists in storage map", () => {

@@ -674,7 +674,7 @@ describe("API Routes Comprehensive Tests", { timeout: 60000 }, () => {
       expect(typeof data.error).toBe("string");
     });
 
-    it("returns proper error format for 500", async () => {
+    it("proceeds without a global restic password, passing null as fallback", async () => {
       vi.mocked(configModule.getJob).mockReturnValue({
         type: "folder",
         source: "/data",
@@ -689,14 +689,19 @@ describe("API Routes Comprehensive Tests", { timeout: 60000 }, () => {
       vi.mocked(configModule.getConfig).mockReturnValue({
         jobs: new Map(),
         storage: new Map(),
-        resticPassword: null, // No password configured
+        resticPassword: null, // No global password — per-storage password used instead
       } as any);
+
+      vi.mocked(resticModule.listSnapshots).mockResolvedValue({
+        success: true,
+        snapshots: [],
+      });
 
       const res = await app.request("/jobs/test-job/history");
       const data = await res.json();
 
-      expect(res.status).toBe(500);
-      expect(data.error).toContain("password");
+      expect(res.status).toBe(200);
+      expect(data.snapshots).toBeDefined();
     });
 
     it("returns 400 for invalid restore parameters (malformed JSON body)", async () => {

@@ -19,6 +19,7 @@ import {
   FolderArchive,
   Activity,
   Play,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import { getJobs, getStorage, runJob, type Job, type Storage } from "@/lib/api";
@@ -247,8 +248,11 @@ function JobsList({ jobs }: { jobs: Job[] }) {
                     runMutation.mutate(job.name);
                   }}
                 >
-                  <Play className="h-3 w-3 mr-1" />
-                  Run
+                  {runMutation.isPending ? (
+                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Running</>
+                  ) : (
+                    <><Play className="h-3 w-3 mr-1" />Run</>
+                  )}
                 </Button>
               </div>
             </div>

@@ -7,6 +7,7 @@ import {
   S3StorageSchema,
   RestStorageSchema,
   LocalStorageSchema,
+  RCloneStorageSchema,
   FolderJobSchema,
   PostgresJobSchema,
   MariadbJobSchema,
@@ -212,6 +213,60 @@ describe("Storage Schemas", () => {
     });
   });
 
+  describe("RCloneStorageSchema", () => {
+    it("parses valid rclone config with config_file", () => {
+      const config = {
+        type: "rclone",
+        remote: "gdrive",
+        path: "restic-backups",
+        config_file: "/run/secrets/rclone.conf",
+      };
+      const result = RCloneStorageSchema.parse(config);
+      expect(result.type).toBe("rclone");
+      expect(result.remote).toBe("gdrive");
+      expect(result.path).toBe("restic-backups");
+      expect(result.config_file).toBe("/run/secrets/rclone.conf");
+      expect(result.config).toBeUndefined();
+    });
+
+    it("parses valid rclone config with inline config map", () => {
+      const config = {
+        type: "rclone",
+        remote: "b2",
+        path: "backups",
+        config: {
+          type: "b2",
+          account: "my-account-id",
+          key: "my-application-key",
+        },
+      };
+      const result = RCloneStorageSchema.parse(config);
+      expect(result.type).toBe("rclone");
+      expect(result.remote).toBe("b2");
+      expect(result.config?.type).toBe("b2");
+      expect(result.config?.account).toBe("my-account-id");
+      expect(result.config?.key).toBe("my-application-key");
+      expect(result.config_file).toBeUndefined();
+    });
+
+    it("applies default empty path", () => {
+      const config = {
+        type: "rclone",
+        remote: "myremote",
+      };
+      const result = RCloneStorageSchema.parse(config);
+      expect(result.path).toBe("");
+    });
+
+    it("rejects missing remote", () => {
+      const config = {
+        type: "rclone",
+        path: "backups",
+      };
+      expect(() => RCloneStorageSchema.parse(config)).toThrow();
+    });
+  });
+
   describe("LocalStorageSchema", () => {
     it("parses valid local storage config", () => {
       const config = {
@@ -254,6 +309,12 @@ describe("Storage Schemas", () => {
       const config = { type: "local", path: "/backups" };
       const result = StorageConfigSchema.parse(config);
       expect(result.type).toBe("local");
+    });
+
+    it("parses rclone storage", () => {
+      const config = { type: "rclone", remote: "gdrive", path: "backups" };
+      const result = StorageConfigSchema.parse(config);
+      expect(result.type).toBe("rclone");
     });
 
     it("rejects invalid storage type", () => {
@@ -662,14 +723,14 @@ describe("ConfigFileSchema", () => {
         },
       },
       restic: {
-        password: "restic-password",
+        restic_password: "restic-password",
         cache_dir: "/tmp/restic-cache",
       },
     };
     const result = ConfigFileSchema.parse(config);
     expect(Object.keys(result.storage)).toHaveLength(2);
     expect(Object.keys(result.jobs)).toHaveLength(2);
-    expect(result.restic?.password).toBe("restic-password");
+    expect(result.restic?.restic_password).toBe("restic-password");
     expect(result.restic?.cache_dir).toBe("/tmp/restic-cache");
   });
 
@@ -686,7 +747,7 @@ describe("ConfigFileSchema", () => {
     expect(result.restic).toBeUndefined();
   });
 
-  it("parses restic with password_file", () => {
+  it("parses restic with restic_password_file", () => {
     const config = {
       storage: {
         local: { type: "local", path: "/backups" },
@@ -695,11 +756,11 @@ describe("ConfigFileSchema", () => {
         backup: { type: "folder", source: "/data", storage: "local" },
       },
       restic: {
-        password_file: "/run/secrets/restic_password",
+        restic_password_file: "/run/secrets/restic_password",
       },
     };
     const result = ConfigFileSchema.parse(config);
-    expect(result.restic?.password_file).toBe("/run/secrets/restic_password");
+    expect(result.restic?.restic_password_file).toBe("/run/secrets/restic_password");
   });
 
   it("rejects config with no storage", () => {

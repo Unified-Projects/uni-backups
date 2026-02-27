@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "fs";
-import { parse as parseYaml } from "yaml";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   ConfigFileSchema,
   type StorageConfig,
@@ -60,7 +60,7 @@ function loadConfigFile(filePath: string): {
     }
   }
 
-  const resticPassword = parsed.restic?.password;
+  const resticPassword = parsed.restic?.restic_password;
   const resticCacheDir = parsed.restic?.cache_dir;
 
   return { storage, jobs, workerGroups, redis: parsed.redis, resticPassword, resticCacheDir };
@@ -144,6 +144,7 @@ export function loadConfig(): RuntimeConfig {
 }
 
 let _config: RuntimeConfig | null = null;
+let _dirty = false;
 
 export function getConfig(): RuntimeConfig {
   if (!_config) {
@@ -195,12 +196,44 @@ export function getRedisConfig(): RedisConfig | undefined {
 
 export function addJob(name: string, config: JobConfig): void {
   getConfig().jobs.set(name, config);
+  _dirty = true;
 }
 
 export function updateJob(name: string, config: JobConfig): void {
   getConfig().jobs.set(name, config);
+  _dirty = true;
 }
 
 export function removeJob(name: string): void {
   getConfig().jobs.delete(name);
+  _dirty = true;
+}
+
+export function isConfigDirty(): boolean {
+  return _dirty;
+}
+
+export function saveConfig(): void {
+  const configFilePath = getConfigFilePath();
+  if (!configFilePath) {
+    throw new Error("No config file path configured (UNI_BACKUPS_CONFIG_FILE not set)");
+  }
+
+  let rawConfig: Record<string, unknown> = {};
+  if (existsSync(configFilePath)) {
+    rawConfig = parseYaml(readFileSync(configFilePath, "utf-8")) as Record<string, unknown>;
+  }
+
+  const jobsObj: Record<string, unknown> = {};
+  for (const [name, job] of getConfig().jobs.entries()) {
+    const jobData: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(job)) {
+      if (v !== undefined && v !== null) jobData[k] = v;
+    }
+    jobsObj[name] = jobData;
+  }
+  rawConfig.jobs = jobsObj;
+
+  writeFileSync(configFilePath, stringifyYaml(rawConfig, { lineWidth: 0 }), "utf-8");
+  _dirty = false;
 }

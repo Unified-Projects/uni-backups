@@ -19,9 +19,10 @@ RUN pnpm install --ignore-scripts
 # Stage 2: Bun runtime base with system dependencies
 FROM oven/bun:1 AS base
 
-# Install restic and database clients
+# Install restic, rclone, and database clients
 RUN apt-get update && apt-get install -y --no-install-recommends \
     restic \
+    rclone \
     openssh-client \
     sshpass \
     postgresql-client \

@@ -36,6 +36,38 @@ storage:
     type: local
     path: /backups/local
 
+  # Google Drive via rclone (option 1: config file)
+  gdrive-backup:
+    type: rclone
+    remote: gdrive
+    path: restic-backups
+    config_file: /run/secrets/rclone.conf
+
+  # Backblaze B2 via rclone (option 2: inline config)
+  b2-backup:
+    type: rclone
+    remote: b2
+    path: restic-backups
+    config:
+      type: b2
+      account: your-account-id
+      key: your-application-key
+
+  # Generic rclone remote (any provider supported by rclone)
+  rclone-generic:
+    type: rclone
+    remote: myremote
+    path: backups/restic
+    config_file: /etc/rclone/rclone.conf
+
+# Restic encryption password (required)
+restic:
+  # Option 1: inline password (not recommended for production)
+  # restic_password: your-restic-encryption-password
+  # Option 2: read password from a file (recommended)
+  restic_password_file: /run/secrets/restic_password
+  cache_dir: /var/cache/restic
+
 # Backup jobs - what to backup and when
 jobs:
   # Docker volume backup

@@ -99,13 +99,22 @@ export interface RestoreOperation {
 }
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 150000);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      signal: options?.signal ?? controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+      },
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: "Request failed" }));
@@ -196,6 +205,14 @@ export async function updateJobConfig(name: string, config: Record<string, unkno
 
 export async function deleteJob(name: string): Promise<{ name: string; status: string; message: string }> {
   return fetchApi(`/api/jobs/${name}`, { method: "DELETE" });
+}
+
+export async function getConfigDirty(): Promise<{ dirty: boolean }> {
+  return fetchApi("/api/jobs/config/dirty");
+}
+
+export async function saveConfigToFile(): Promise<{ success: boolean; message: string }> {
+  return fetchApi("/api/jobs/config/save", { method: "POST" });
 }
 
 export async function getJobHistory(name: string): Promise<{

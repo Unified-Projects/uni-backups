@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 const apiUrl = process.env.TEST_API_URL || "http://localhost:3001";
 
@@ -233,6 +233,214 @@ test.describe("Repository Statistics", () => {
     const checkData = await checkResponse.json();
     expect(checkData).toHaveProperty("success");
     expect(checkData.success).toBe(true);
+  });
+});
+
+test.describe("FileBrowser Navigation Isolation", () => {
+  const STORAGE = "test-storage";
+  const REPO = "test-repo";
+  const SNAPSHOT_ID = "abc12345";
+  const SNAPSHOT_TIME = "2024-01-15T10:30:00Z";
+
+  const ROOT_ENTRIES = [
+    { type: "dir", path: "/backups", name: "backups", size: 0, mtime: SNAPSHOT_TIME },
+    { type: "dir", path: "/etc", name: "etc", size: 0, mtime: SNAPSHOT_TIME },
+  ];
+
+  const CHILD_ENTRIES = [
+    { type: "dir", path: "/backups/volumes", name: "volumes", size: 0, mtime: SNAPSHOT_TIME },
+    { type: "file", path: "/backups/data.tar.gz", name: "data.tar.gz", size: 1024000, mtime: SNAPSHOT_TIME },
+  ];
+
+  async function setupMocks(page: Page) {
+    await page.route("**/api/storage", (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ storage: [{ name: STORAGE, type: "local" }] }),
+      });
+    });
+
+    await page.route(`**/api/storage/${STORAGE}/repos`, (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ repos: [REPO] }),
+      });
+    });
+
+    await page.route(`**/api/repos/${STORAGE}/${REPO}/snapshots`, (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          snapshots: [
+            {
+              id: `${SNAPSHOT_ID}full`,
+              short_id: SNAPSHOT_ID,
+              time: SNAPSHOT_TIME,
+              hostname: "test-host",
+              paths: ["/"],
+              tags: [],
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.route(
+      `**/api/repos/${STORAGE}/${REPO}/snapshots/${SNAPSHOT_ID}/ls**`,
+      (route) => {
+        const url = new URL(route.request().url());
+        const path = url.searchParams.get("path") || "/";
+        if (path === "/backups") {
+          route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              storage: STORAGE,
+              repo: REPO,
+              snapshotId: SNAPSHOT_ID,
+              path: "/backups",
+              entries: CHILD_ENTRIES,
+            }),
+          });
+        } else {
+          route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              storage: STORAGE,
+              repo: REPO,
+              snapshotId: SNAPSHOT_ID,
+              path: "/",
+              entries: ROOT_ENTRIES,
+            }),
+          });
+        }
+      }
+    );
+  }
+
+  async function openFileBrowser(page: Page) {
+    await setupMocks(page);
+    await page.goto("/snapshots");
+    await page.waitForLoadState("networkidle");
+
+    await page.locator('button[role="combobox"]').nth(0).click();
+    await page.getByRole("option", { name: STORAGE }).click();
+
+    await page.locator('button[role="combobox"]').nth(1).click();
+    await page.getByRole("option", { name: REPO }).click();
+
+    await page.locator('button[role="combobox"]').nth(2).click();
+    await page.getByRole("option", { name: new RegExp(SNAPSHOT_ID) }).click();
+
+    await page.waitForSelector('[data-testid="file-browser-table"]');
+    await page.waitForLoadState("networkidle");
+  }
+
+  test("root shows only root entries", async ({ page }) => {
+    await openFileBrowser(page);
+
+    const cells = page.locator(
+      '[data-testid="file-browser-table"] tbody tr td:first-child'
+    );
+    const names = await cells.allTextContents();
+    const trimmed = names.map((n) => n.trim()).filter(Boolean);
+
+    expect(trimmed).toContain("backups");
+    expect(trimmed).toContain("etc");
+    expect(trimmed).not.toContain("volumes");
+    expect(trimmed).not.toContain("data.tar.gz");
+  });
+
+  test("navigating into child dir shows only its entries", async ({ page }) => {
+    await openFileBrowser(page);
+
+    // Click the backups directory row
+    await page
+      .locator('[data-testid="file-browser-table"] tbody tr')
+      .filter({ hasText: "backups" })
+      .click();
+    // Wait for child entries to appear
+    await page
+      .locator('[data-testid="file-browser-table"] tbody tr')
+      .filter({ hasText: "volumes" })
+      .waitFor({ state: "visible" });
+
+    const cells = page.locator(
+      '[data-testid="file-browser-table"] tbody tr td:first-child'
+    );
+    const names = await cells.allTextContents();
+    const trimmed = names.map((n) => n.trim()).filter(Boolean);
+
+    expect(trimmed).toContain("volumes");
+    expect(trimmed).toContain("data.tar.gz");
+    expect(trimmed).not.toContain("backups");
+    expect(trimmed).not.toContain("etc");
+  });
+
+  test("going back to root clears child entries", async ({ page }) => {
+    await openFileBrowser(page);
+
+    await page
+      .locator('[data-testid="file-browser-table"] tbody tr')
+      .filter({ hasText: "backups" })
+      .click();
+    await page
+      .locator('[data-testid="file-browser-table"] tbody tr')
+      .filter({ hasText: "volumes" })
+      .waitFor({ state: "visible" });
+
+    await page
+      .locator('[data-testid="file-browser-breadcrumb"] button')
+      .filter({ hasText: "/" })
+      .first()
+      .click();
+    await page
+      .locator('[data-testid="file-browser-table"] tbody tr')
+      .filter({ hasText: "backups" })
+      .waitFor({ state: "visible" });
+
+    const cells = page.locator(
+      '[data-testid="file-browser-table"] tbody tr td:first-child'
+    );
+    const names = await cells.allTextContents();
+    const trimmed = names.map((n) => n.trim()).filter(Boolean);
+
+    expect(trimmed).toContain("backups");
+    expect(trimmed).toContain("etc");
+    expect(trimmed).not.toContain("volumes");
+    expect(trimmed).not.toContain("data.tar.gz");
+  });
+
+  test("breadcrumb reflects current path", async ({ page }) => {
+    await openFileBrowser(page);
+
+    const breadcrumbAtRoot = page.locator(
+      '[data-testid="file-browser-breadcrumb"]'
+    );
+    await expect(breadcrumbAtRoot).toContainText("/");
+    const chevronCountAtRoot = await breadcrumbAtRoot
+      .locator("svg")
+      .count();
+    expect(chevronCountAtRoot).toBe(0);
+
+    await page
+      .locator('[data-testid="file-browser-table"] tbody tr')
+      .filter({ hasText: "backups" })
+      .click();
+    await page
+      .locator('[data-testid="file-browser-table"] tbody tr')
+      .filter({ hasText: "volumes" })
+      .waitFor({ state: "visible" });
+
+    await expect(breadcrumbAtRoot).toContainText("backups");
+    const chevronCountInChild = await breadcrumbAtRoot
+      .locator("svg")
+      .count();
+    expect(chevronCountInChild).toBeGreaterThan(0);
   });
 });
 

@@ -3,20 +3,19 @@
 ## Quick Start
 
 ```bash
-# 1. Create config
+# 1. Copy the example config
 mkdir -p config
 cp config/backups.example.yml config/backups.yml
 
-# 2. Set restic password
-echo "UNI_BACKUPS_RESTIC_PASSWORD=change-this-password" > .env
+# 2. Edit config/backups.yml — add your storage and jobs
 
-# 3. Edit config/backups.yml for your setup
-
-# 4. Run
+# 3. Run
 docker compose up -d
 ```
 
 Web UI at `http://localhost`
+
+The restic encryption password is set per-storage in `backups.yml` (see [Restic Password](#restic-password)). A global fallback env var is also supported.
 
 ---
 
@@ -73,7 +72,6 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - UNI_BACKUPS_RESTIC_PASSWORD=${UNI_BACKUPS_RESTIC_PASSWORD}
       - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.yml
     volumes:
       - ./config:/app/config:ro
@@ -99,7 +97,6 @@ services:
       - WORKER_GROUPS=default
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - UNI_BACKUPS_RESTIC_PASSWORD=${UNI_BACKUPS_RESTIC_PASSWORD}
       - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.yml
     volumes:
       - ./config:/app/config:ro
@@ -133,7 +130,27 @@ volumes:
 
 ## Configuration File (backups.yml)
 
-Two sections: `storage` (where backups go) and `jobs` (what to backup).
+Two top-level sections: `storage` (where backups go) and `jobs` (what to backup).
+
+### Restic Password
+
+Each storage entry holds its own restic encryption password. This is the password restic uses to encrypt/decrypt snapshots in that repository.
+
+```yaml
+storage:
+  hetzner:
+    type: sftp
+    host: uXXXXXX.your-storagebox.de
+    user: uXXXXXX
+    key_file: /run/secrets/storagebox_id_ed25519
+    path: /backups
+    restic_password_file: /run/secrets/restic_password   # recommended
+    # restic_password: plain-text-password               # not recommended
+```
+
+If you prefer a single global password across all storage entries, set `UNI_BACKUPS_RESTIC_PASSWORD` in the environment. Per-storage config takes priority over the env var.
+
+---
 
 ### Storage Backends
 
@@ -144,6 +161,7 @@ storage:
   local:
     type: local
     path: /backups/local
+    restic_password_file: /run/secrets/restic_password
 ```
 
 Mount a host directory or external drive:
@@ -152,21 +170,11 @@ volumes:
   - /mnt/external-drive:/backups/local
 ```
 
+---
+
 #### SFTP (Hetzner Storage Box, any SSH server)
 
-```yaml
-storage:
-  hetzner:
-    type: sftp
-    host: uXXXXXX.your-storagebox.de
-    port: 22
-    user: uXXXXXX
-    # key_file: /run/secrets/storagebox_id_ed25519  # SSH private key path
-    password_file: /run/secrets/storagebox_password
-    path: /backups
-```
-
-Or with SSH private key auth:
+SSH key auth (recommended):
 ```yaml
 storage:
   hetzner:
@@ -175,18 +183,23 @@ storage:
     user: uXXXXXX
     key_file: /run/secrets/storagebox_id_ed25519
     path: /backups
+    restic_password_file: /run/secrets/restic_password
 ```
 
-Or with direct password (not recommended):
+Password auth:
 ```yaml
 storage:
   hetzner:
     type: sftp
     host: uXXXXXX.your-storagebox.de
+    port: 22
     user: uXXXXXX
-    password: your-password
+    password_file: /run/secrets/storagebox_password
     path: /backups
+    restic_password_file: /run/secrets/restic_password
 ```
+
+---
 
 #### S3 / S3-Compatible (AWS, Hetzner Object Storage, MinIO, Backblaze B2)
 
@@ -194,19 +207,78 @@ storage:
 storage:
   s3-bucket:
     type: s3
-    endpoint: https://s3.amazonaws.com        # AWS
-    # endpoint: https://fsn1.your-objectstorage.com  # Hetzner
-    # endpoint: https://s3.us-west-000.backblazeb2.com  # Backblaze
+    endpoint: https://s3.amazonaws.com              # AWS
+    # endpoint: https://fsn1.your-objectstorage.com # Hetzner
+    # endpoint: https://s3.us-west-000.backblazeb2.com # Backblaze B2
     bucket: my-backups
     region: us-east-1
     access_key_file: /run/secrets/s3_access_key
     secret_key_file: /run/secrets/s3_secret_key
     path: ""  # optional prefix in bucket
+    restic_password_file: /run/secrets/restic_password
 ```
 
 ---
 
+#### REST Server
+
+```yaml
+storage:
+  rest-server:
+    type: rest
+    url: https://rest.example.com/my-repo
+    user: myuser
+    password_file: /run/secrets/rest_password
+    restic_password_file: /run/secrets/restic_password
+```
+
+No auth:
+```yaml
+storage:
+  rest-server:
+    type: rest
+    url: http://rest-server:8000
+    restic_password_file: /run/secrets/restic_password
+```
+
+---
+
+#### RClone (Google Drive, Azure Blob, Dropbox, OneDrive, WebDAV, FTP, and 40+ more)
+
+Requires `rclone` installed in the worker image. Config can be a file or inline key/value pairs.
+
+Config file:
+```yaml
+storage:
+  gdrive:
+    type: rclone
+    remote: gdrive
+    path: restic-backups
+    config_file: /run/secrets/rclone.conf
+    restic_password_file: /run/secrets/restic_password
+```
+
+Inline config (no config file needed):
+```yaml
+storage:
+  b2:
+    type: rclone
+    remote: b2
+    path: my-bucket/backups
+    config:
+      type: b2
+      account: YOUR_ACCOUNT_ID
+      key: YOUR_APP_KEY
+    restic_password_file: /run/secrets/restic_password
+```
+
+The inline config keys map to `RCLONE_CONFIG_<REMOTE>_<KEY>` env vars at runtime. Remote names with hyphens are uppercased and converted to underscores.
+
+---
+
 ### Backup Jobs
+
+> **Note:** Jobs created or edited through the web UI are in-memory only. They do not persist to `backups.yml` and will be lost on container restart. Define jobs in `backups.yml` for permanent configuration.
 
 #### Docker Volumes
 
@@ -231,12 +303,9 @@ jobs:
 
 Finding volume paths:
 ```bash
-# List all volumes
 docker volume ls
-
-# Get mount path for a volume
 docker volume inspect myapp_data --format '{{ .Mountpoint }}'
-# Output: /var/lib/docker/volumes/myapp_data/_data
+# /var/lib/docker/volumes/myapp_data/_data
 ```
 
 #### Folder Backup
@@ -253,9 +322,8 @@ jobs:
       daily: 7
 ```
 
-Mount the folder into the container:
+Mount the folder into the worker container:
 ```yaml
-# In docker-compose.yml
 worker:
   volumes:
     - /etc/myapp:/backups/myapp-config:ro
@@ -269,7 +337,7 @@ Then use `/backups/myapp-config` as source.
 jobs:
   postgres-main:
     type: postgres
-    host: postgres          # Docker service name or IP
+    host: postgres
     port: 5432
     database: myapp
     user: postgres
@@ -331,7 +399,7 @@ volumes:
   - /var/lib/docker/volumes:/backups/volumes:ro
 ```
 
-This gives access to all Docker volumes at `/backups/volumes/<volume-name>/_data`.
+This exposes all Docker volumes at `/backups/volumes/<volume-name>/_data`.
 
 In your job config:
 ```yaml
@@ -339,12 +407,10 @@ jobs:
   my-volume:
     type: volume
     source: /backups/volumes/myapp_data/_data
-    # ...
 ```
 
 ### Named Volume Specific Mount
 
-To mount only specific volumes:
 ```yaml
 worker:
   volumes:
@@ -363,9 +429,8 @@ worker:
 
 ### Remote NFS/CIFS
 
-Mount on host first, then pass through:
+Mount on the host first, then pass through:
 ```bash
-# On host
 mount -t nfs nas:/share /mnt/nas
 ```
 
@@ -411,55 +476,52 @@ retention:
   yearly: 2      # Keep last 2 yearly
 ```
 
-Restic handles deduplication. Multiple jobs can share the same repo.
+Restic deduplicates data across snapshots. Multiple jobs can share the same repo.
 
 ---
 
 ## Secrets Management
 
-### Using Docker Secrets
+### Docker Secrets
 
 ```yaml
 # docker-compose.yml
 secrets:
+  restic_password:
+    file: ./secrets/restic_password.txt
   pg_password:
     file: ./secrets/pg_password.txt
-  storagebox_password:
-    file: ./secrets/storagebox_password.txt
   storagebox_id_ed25519:
     file: ./secrets/storagebox_id_ed25519
 
 services:
   worker:
     secrets:
+      - restic_password
       - pg_password
-      - storagebox_password
       - storagebox_id_ed25519
 ```
 
 In config:
 ```yaml
-jobs:
-  postgres:
-    password_file: /run/secrets/pg_password
-
 storage:
   hetzner:
     key_file: /run/secrets/storagebox_id_ed25519
-    password_file: /run/secrets/storagebox_password
+    restic_password_file: /run/secrets/restic_password
+
+jobs:
+  postgres:
+    password_file: /run/secrets/pg_password
 ```
 
-### Using Environment Variables
+### Environment Variable Fallback
 
-```yaml
-# docker-compose.yml
-services:
-  worker:
-    environment:
-      - PG_PASSWORD=${PG_PASSWORD}
+If you don't want per-storage restic passwords, set a global fallback:
+```bash
+UNI_BACKUPS_RESTIC_PASSWORD=change-this-password
 ```
 
-Mount a script that writes env vars to files, or use direct passwords (less secure).
+Per-storage `restic_password` / `restic_password_file` always takes priority over this env var.
 
 ---
 
@@ -502,21 +564,20 @@ backend api_backend
     http-check send meth GET uri /health ver HTTP/1.1 hdr Host api
     http-check expect status 200
     server api api:3001 check inter 5s fall 3 rise 2
+
 ```
 
 ---
 
 ## Building Images for Transfer
 
-Build x86_64 images and package for transfer to server:
+Build x86_64 images and package for transfer to a server:
 
 ```bash
-# Build all images
 docker buildx build --platform linux/amd64 -t unifiedprojects/uni-backups-web:latest --target production -f apps/web/Dockerfile .
 docker buildx build --platform linux/amd64 -t unifiedprojects/uni-backups-api:latest --target production -f apps/api/Dockerfile .
 docker buildx build --platform linux/amd64 -t unifiedprojects/uni-backups-worker:latest --target production -f apps/worker/Dockerfile .
 
-# Package into tar.gz
 docker save \
   unifiedprojects/uni-backups-web:latest \
   unifiedprojects/uni-backups-api:latest \
@@ -526,10 +587,7 @@ docker save \
 
 On the server:
 ```bash
-# Load images
 gunzip -c uni-backups-images.tar.gz | docker load
-
-# Verify
 docker images | grep uni-backups
 ```
 
@@ -539,8 +597,10 @@ docker images | grep uni-backups
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `UNI_BACKUPS_RESTIC_PASSWORD` | Encryption password for restic repos | Required |
 | `UNI_BACKUPS_CONFIG_FILE` | Path to backups.yml | `/app/config/backups.yml` |
+| `UNI_BACKUPS_RESTIC_PASSWORD` | Global restic encryption password (fallback — per-storage config takes priority) | — |
+| `UNI_BACKUPS_RESTIC_PASSWORD_FILE` | Path to file containing the global restic password | — |
+| `UNI_BACKUPS_RESTIC_CACHE_DIR` | Override restic cache directory for all repos | `/tmp/restic-cache` |
 | `REDIS_HOST` | Redis hostname | `redis` |
 | `REDIS_PORT` | Redis port | `6379` |
 | `WORKER_ID` | Unique worker identifier | `worker-1` |
@@ -564,7 +624,10 @@ Run a manual backup from the UI and check worker logs.
 Ensure volumes are mounted with `:ro` and the paths exist on the host.
 
 ### Restic repo not initialized
-First backup to a new repo auto-initializes it. Check worker logs for initialization errors.
+First backup to a new repo auto-initializes it. Check worker logs for errors.
 
-### Network issues with SFTP/S3
-Worker needs outbound access. Check firewall rules and DNS resolution.
+### Network issues with SFTP/S3/rclone
+The worker needs outbound access on the relevant ports. Check firewall rules and DNS.
+
+### RClone not found
+The worker image must have `rclone` installed. Check with `docker exec <worker> rclone version`.
