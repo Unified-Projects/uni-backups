@@ -31,7 +31,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "ioredis": "^5.9.3",
+    "ioredis": "^5.10.0",
     "yaml": "^2.8.2",
     "zod": "^3.25.76"
   },
@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@uni-backups/queue": "workspace:*",
-    "fast-check": "^4.5.3",
+    "fast-check": "^4.6.0",
     "typescript": "^5.9.3",
     "@types/node": "^25.3.0",
     "vitest": "^4.0.18",
