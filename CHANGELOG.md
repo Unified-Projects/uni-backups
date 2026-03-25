@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-25
+
+### Fixed
+
+- Snapshot file browser now filters out the parent directory entry itself (restic ls includes the directory being listed as an entry)
+- Snapshot file browser now skips snapshot metadata lines (`struct_type: "snapshot"`) that are not file/dir entries
+- Prune failures are now logged instead of silently ignored; `prune()` return value is checked for success
+- Prune retention policies now group by tags (`--group-by tags`) so retention applies per job/tag rather than per unique host/path
+
 ## [0.2.0] - 2026-02-27
 
 ### Added

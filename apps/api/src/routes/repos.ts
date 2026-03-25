@@ -210,19 +210,30 @@ repos.get("/:storage/:repo/snapshots/:id/ls", async (c) => {
     return c.json({ error: result.message }, isNotFound ? 404 : 500);
   }
 
+  // Filter out the parent directory entry itself (restic ls includes the
+  // directory being listed as an entry) and any snapshot metadata lines
+  const requestedPath = path || "/";
+  const filteredEntries = (result.entries || []).filter((e) => {
+    // Skip entries whose path exactly matches the directory being listed
+    if (e.path === requestedPath) return false;
+    // Also handle trailing slash variations
+    if (e.path === requestedPath.replace(/\/$/, "") && e.type === "dir") return false;
+    if (e.path + "/" === requestedPath && e.type === "dir") return false;
+    return true;
+  });
+
   return c.json({
     storage: storageName,
     repo: repoName,
     snapshotId,
-    path: path || "/",
-    entries:
-      result.entries?.map((e) => ({
-        name: e.name,
-        type: e.type,
-        path: e.path,
-        size: e.size,
-        mtime: e.mtime,
-      })) || [],
+    path: requestedPath,
+    entries: filteredEntries.map((e) => ({
+      name: e.name,
+      type: e.type,
+      path: e.path,
+      size: e.size,
+      mtime: e.mtime,
+    })),
   });
 });
 

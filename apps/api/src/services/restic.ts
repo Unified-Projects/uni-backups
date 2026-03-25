@@ -358,7 +358,11 @@ export async function listFiles(
       const entries: ResticLsEntry[] = [];
       for (const line of result.stdout.trim().split("\n")) {
         if (line) {
-          entries.push(JSON.parse(line));
+          const parsed = JSON.parse(line);
+          // Skip snapshot metadata lines (struct_type: "snapshot") which
+          // are not file/dir entries
+          if (parsed.struct_type === "snapshot") continue;
+          entries.push(parsed);
         }
       }
       return { success: true, entries };

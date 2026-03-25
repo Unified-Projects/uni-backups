@@ -355,6 +355,9 @@ export async function prune(
 
   const args = ["--repo", repoUrl, "forget", "--prune"];
 
+  // Group by tags so retention policies apply per job/tag, not per unique host/path
+  args.push("--group-by", "tags");
+
   if (retention.last) args.push("--keep-last", retention.last.toString());
   if (retention.hourly) args.push("--keep-hourly", retention.hourly.toString());
   if (retention.daily) args.push("--keep-daily", retention.daily.toString());

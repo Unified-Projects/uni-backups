@@ -153,9 +153,12 @@ export class JobProcessor {
 
       // Run prune if retention is configured (inline for small retention policies)
       if (jobConfig.retention) {
-        await restic.prune(storage, repoName, resticPassword, jobConfig.retention, {
+        const pruneResult = await restic.prune(storage, repoName, resticPassword, jobConfig.retention, {
           tags: [jobName],
         });
+        if (!pruneResult.success) {
+          console.error(`[Processor] Prune failed for job ${jobName}: ${pruneResult.message}`);
+        }
       }
 
       const endTime = Date.now();
