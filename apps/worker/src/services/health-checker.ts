@@ -25,6 +25,13 @@ export interface HealthCheckerOptions {
   checkInterval?: number;
 }
 
+type WorkerGroupConfig = {
+  workers: string[];
+  primary?: string;
+  failover_order?: string[];
+  quorum_size: number;
+};
+
 export class HealthChecker {
   private workerConfig: WorkerConfig;
   private stateManager: StateManager;
@@ -96,24 +103,23 @@ export class HealthChecker {
       return;
     }
 
+    const groupMembers = await this.getGroupMembers(groupId, groupConfig);
     const groupState = await this.stateManager.getWorkerGroupState(groupId);
-    if (!groupState) {
-      // No group state yet - attempt initial primary election
-      const healthyWorkerIds = new Set(
-        await this.stateManager.getHealthyWorkers(this.heartbeatTimeout)
-      );
-      await this.electPrimary(groupId, healthyWorkerIds, []);
-      return;
-    }
-
-    const workersInGroup = await this.stateManager.getWorkersInGroup(groupId);
-
     const healthyWorkerIds = new Set(
       await this.stateManager.getHealthyWorkers(this.heartbeatTimeout)
     );
+    const healthyGroupWorkerIds = new Set(
+      groupMembers.filter((workerId) => healthyWorkerIds.has(workerId))
+    );
+
+    if (!groupState) {
+      // No group state yet - attempt initial primary election using configured membership/order.
+      await this.electPrimary(groupId, groupConfig, groupMembers, healthyGroupWorkerIds);
+      return;
+    }
 
     if (groupState.primaryWorkerId) {
-      const primaryHealthy = healthyWorkerIds.has(groupState.primaryWorkerId);
+      const primaryHealthy = healthyGroupWorkerIds.has(groupState.primaryWorkerId);
 
       if (!primaryHealthy) {
         console.log(
@@ -135,20 +141,28 @@ export class HealthChecker {
             `[HealthChecker] Quorum reached for ${groupState.primaryWorkerId} in group ${groupId}, triggering failover`
           );
 
-          await this.triggerFailover(groupId, groupState.primaryWorkerId, healthyWorkerIds);
+          await this.triggerFailover(
+            groupId,
+            groupState.primaryWorkerId,
+            healthyGroupWorkerIds,
+            groupConfig,
+            groupMembers
+          );
         }
       } else {
         await this.updateGroupHealthCheck(groupId);
       }
     } else {
-      await this.electPrimary(groupId, healthyWorkerIds, groupState.failoverOrder);
+      await this.electPrimary(groupId, groupConfig, groupMembers, healthyGroupWorkerIds);
     }
   }
 
   private async triggerFailover(
     groupId: string,
     failedWorkerId: string,
-    healthyWorkerIds: Set<string>
+    healthyWorkerIds: Set<string>,
+    groupConfig: WorkerGroupConfig,
+    groupMembers: string[]
   ): Promise<void> {
     const lockAcquired = await this.stateManager.acquireFailoverLock(
       groupId,
@@ -167,23 +181,12 @@ export class HealthChecker {
       }
 
       let newPrimaryId: string | null = null;
-
-      for (const candidateId of groupState.failoverOrder) {
-        if (candidateId !== failedWorkerId && healthyWorkerIds.has(candidateId)) {
-          newPrimaryId = candidateId;
-          break;
-        }
-      }
-
-      // If no candidate from failover order, pick any healthy worker
-      if (!newPrimaryId) {
-        for (const workerId of healthyWorkerIds) {
-          if (workerId !== failedWorkerId) {
-            newPrimaryId = workerId;
-            break;
-          }
-        }
-      }
+      newPrimaryId = this.selectPrimaryCandidate(
+        groupConfig,
+        groupMembers,
+        healthyWorkerIds,
+        failedWorkerId
+      );
 
       if (newPrimaryId) {
         console.log(
@@ -204,8 +207,9 @@ export class HealthChecker {
 
   private async electPrimary(
     groupId: string,
-    healthyWorkerIds: Set<string>,
-    failoverOrder: string[]
+    groupConfig: WorkerGroupConfig,
+    groupMembers: string[],
+    healthyWorkerIds: Set<string>
   ): Promise<void> {
     const lockAcquired = await this.stateManager.acquireFailoverLock(
       groupId,
@@ -224,21 +228,11 @@ export class HealthChecker {
       }
 
       let newPrimaryId: string | null = null;
-
-      for (const candidateId of failoverOrder) {
-        if (healthyWorkerIds.has(candidateId)) {
-          newPrimaryId = candidateId;
-          break;
-        }
-      }
-
-      // If no candidate from failover order, pick any healthy worker
-      if (!newPrimaryId) {
-        for (const workerId of healthyWorkerIds) {
-          newPrimaryId = workerId;
-          break;
-        }
-      }
+      newPrimaryId = this.selectPrimaryCandidate(
+        groupConfig,
+        groupMembers,
+        healthyWorkerIds
+      );
 
       if (newPrimaryId) {
         console.log(`[HealthChecker] Elected ${newPrimaryId} as primary in group ${groupId}`);
@@ -253,6 +247,44 @@ export class HealthChecker {
     await this.redis.hset(`worker_groups:${groupId}`, {
       lastHealthCheck: Date.now().toString(),
     });
+  }
+
+  private async getGroupMembers(
+    groupId: string,
+    groupConfig: WorkerGroupConfig
+  ): Promise<string[]> {
+    if (groupConfig.workers.length > 0) {
+      return Array.from(new Set(groupConfig.workers));
+    }
+
+    return Array.from(new Set(await this.stateManager.getWorkersInGroup(groupId)));
+  }
+
+  private selectPrimaryCandidate(
+    groupConfig: WorkerGroupConfig,
+    groupMembers: string[],
+    healthyWorkerIds: Set<string>,
+    excludeWorkerId?: string
+  ): string | null {
+    const eligibleMembers = groupMembers.filter(
+      (workerId) => workerId !== excludeWorkerId && healthyWorkerIds.has(workerId)
+    );
+
+    if (eligibleMembers.length === 0) {
+      return null;
+    }
+
+    if (groupConfig.primary && eligibleMembers.includes(groupConfig.primary)) {
+      return groupConfig.primary;
+    }
+
+    for (const candidateId of groupConfig.failover_order ?? []) {
+      if (eligibleMembers.includes(candidateId)) {
+        return candidateId;
+      }
+    }
+
+    return eligibleMembers[0] ?? null;
   }
 
   private async recordFailoverEvent(

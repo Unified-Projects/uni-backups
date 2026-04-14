@@ -22,7 +22,15 @@ import {
   Loader2,
 } from "lucide-react";
 import Link from "next/link";
-import { getJobs, getStorage, runJob, type Job, type Storage } from "@/lib/api";
+import {
+  getJobs,
+  getSchedule,
+  getStorage,
+  runJob,
+  type Job,
+  type JobRun,
+  type Storage,
+} from "@/lib/api";
 import { formatDistanceToNow } from "@/lib/utils";
 
 function JobStatusBadge({ job }: { job: Job }) {
@@ -45,6 +53,33 @@ function JobStatusBadge({ job }: { job: Job }) {
   }
 
   if (job.lastRun.status === "completed" || job.lastRun.status === "success") {
+    return (
+      <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
+        <CheckCircle className="mr-1 h-3 w-3" />
+        Success
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20">
+      <XCircle className="mr-1 h-3 w-3" />
+      Failed
+    </Badge>
+  );
+}
+
+function RunStatusBadge({ status }: { status: JobRun["status"] }) {
+  if (status === "running") {
+    return (
+      <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+        <Activity className="mr-1 h-3 w-3 animate-pulse" />
+        Running
+      </Badge>
+    );
+  }
+
+  if (status === "completed" || status === "success") {
     return (
       <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
         <CheckCircle className="mr-1 h-3 w-3" />
@@ -122,17 +157,25 @@ function DashboardStats({
   );
 }
 
-function RecentActivity({ jobs }: { jobs: Job[] }) {
-  const sortedJobs = [...jobs]
+function getRecentRunsFromJobs(jobs: Job[]): Array<JobRun & { jobName: string }> {
+  return [...jobs]
     .filter((j) => j.lastRun)
     .sort((a, b) => {
       const aTime = a.lastRun?.endTime || a.lastRun?.startTime || "";
       const bTime = b.lastRun?.endTime || b.lastRun?.startTime || "";
       return new Date(bTime).getTime() - new Date(aTime).getTime();
     })
-    .slice(0, 5);
+    .slice(0, 5)
+    .map((job) => ({
+      ...job.lastRun!,
+      jobName: job.name,
+    }));
+}
 
-  if (sortedJobs.length === 0) {
+function RecentActivity({ runs }: { runs: Array<JobRun & { jobName: string }> }) {
+  const recentRuns = runs.slice(0, 5);
+
+  if (recentRuns.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -156,25 +199,25 @@ function RecentActivity({ jobs }: { jobs: Job[] }) {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {sortedJobs.map((job) => (
+          {recentRuns.map((run, index) => (
             <div
-              key={job.name}
+              key={`${run.jobName}-${run.startTime}-${index}`}
               className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0"
             >
               <div className="space-y-1">
                 <Link
-                  href={`/jobs?name=${job.name}`}
+                  href={`/jobs?name=${run.jobName}`}
                   className="font-medium hover:underline"
                 >
-                  {job.name}
+                  {run.jobName}
                 </Link>
                 <p className="text-sm text-muted-foreground">
-                  {job.lastRun?.endTime
-                    ? formatDistanceToNow(new Date(job.lastRun.endTime))
+                  {run.endTime
+                    ? formatDistanceToNow(new Date(run.endTime))
                     : "Running..."}
                 </p>
               </div>
-              <JobStatusBadge job={job} />
+              <RunStatusBadge status={run.status} />
             </div>
           ))}
         </div>
@@ -264,18 +307,40 @@ function JobsList({ jobs }: { jobs: Job[] }) {
 }
 
 export default function DashboardPage() {
-  const { data: jobsData, isLoading: jobsLoading } = useQuery({
+  const {
+    data: jobsData,
+    isLoading: jobsLoading,
+    error: jobsError,
+  } = useQuery({
     queryKey: ["jobs", "all"],
     queryFn: () => getJobs({ pageSize: 1000 }), // Get all jobs for dashboard stats
     refetchInterval: 15000,
+    retry: false,
   });
 
-  const { data: storageData, isLoading: storageLoading } = useQuery({
+  const {
+    data: storageData,
+    isLoading: storageLoading,
+    error: storageError,
+  } = useQuery({
     queryKey: ["storage"],
     queryFn: getStorage,
+    retry: false,
   });
 
-  const isLoading = jobsLoading || storageLoading;
+  const {
+    data: scheduleData,
+    isLoading: scheduleLoading,
+    error: scheduleError,
+  } = useQuery({
+    queryKey: ["schedule"],
+    queryFn: getSchedule,
+    refetchInterval: 15000,
+    retry: false,
+  });
+
+  const isLoading = jobsLoading || storageLoading || scheduleLoading;
+  const queryErrors = [jobsError, storageError, scheduleError].filter(Boolean) as Error[];
 
   if (isLoading) {
     return (
@@ -328,6 +393,7 @@ export default function DashboardPage() {
 
   const jobs = jobsData?.jobs || [];
   const storage = storageData?.storage || [];
+  const recentRuns = scheduleData?.recent?.slice(0, 5) || getRecentRunsFromJobs(jobs);
 
   return (
     <div className="space-y-6">
@@ -336,10 +402,20 @@ export default function DashboardPage() {
         <p className="text-muted-foreground">Overview of your backup system</p>
       </div>
 
+      {queryErrors.length > 0 && (
+        <div
+          data-testid="error"
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          {queryErrors[0]?.message || "Failed to load dashboard data."}
+        </div>
+      )}
+
       <DashboardStats jobs={jobs} storage={storage} />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <RecentActivity jobs={jobs} />
+        <RecentActivity runs={recentRuns} />
         <JobsList jobs={jobs} />
       </div>
     </div>

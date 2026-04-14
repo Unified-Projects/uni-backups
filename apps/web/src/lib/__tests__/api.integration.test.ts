@@ -180,8 +180,8 @@ describe("API Client Integration Tests", () => {
 
       expect(result.name).toBe(jobName);
       expect(result).toHaveProperty("config");
-      expect(result).toHaveProperty("isActive");
-      expect(typeof result.isActive).toBe("boolean");
+      expect(result).toHaveProperty("isRunning");
+      expect(typeof result.isRunning).toBe("boolean");
       expect(result).toHaveProperty("recentRuns");
       expect(Array.isArray(result.recentRuns)).toBe(true);
     });
@@ -425,8 +425,8 @@ describe("API Client Integration Tests", () => {
       expect(Array.isArray(result.scheduled)).toBe(true);
       expect(result).toHaveProperty("running");
       expect(Array.isArray(result.running)).toBe(true);
-      expect(result).toHaveProperty("recentRuns");
-      expect(Array.isArray(result.recentRuns)).toBe(true);
+      expect(result).toHaveProperty("recent");
+      expect(Array.isArray(result.recent)).toBe(true);
     });
 
     it("returns currently running jobs", async () => {
@@ -449,8 +449,8 @@ describe("API Client Integration Tests", () => {
 
       const result = await getScheduleHistory();
 
-      expect(result).toHaveProperty("runs");
-      expect(Array.isArray(result.runs)).toBe(true);
+      expect(result).toHaveProperty("history");
+      expect(Array.isArray(result.history)).toBe(true);
     });
 
     it("filters schedule history by job name", async () => {
@@ -459,12 +459,12 @@ describe("API Client Integration Tests", () => {
       const jobName = jobsList[0].name;
       const result = await getScheduleHistory({ job: jobName });
 
-      expect(result).toHaveProperty("runs");
-      expect(Array.isArray(result.runs)).toBe(true);
+      expect(result).toHaveProperty("history");
+      expect(Array.isArray(result.history)).toBe(true);
 
       // All returned runs should be for the specified job
-      for (const run of result.runs) {
-        expect(run.name).toBe(jobName);
+      for (const run of result.history) {
+        expect(run.jobName).toBe(jobName);
       }
     });
 
@@ -473,8 +473,8 @@ describe("API Client Integration Tests", () => {
 
       const result = await getScheduleHistory({ limit: 5 });
 
-      expect(result).toHaveProperty("runs");
-      expect(result.runs.length).toBeLessThanOrEqual(5);
+      expect(result).toHaveProperty("history");
+      expect(result.history.length).toBeLessThanOrEqual(5);
     });
   });
 

@@ -8,6 +8,12 @@ vi.mock("@/lib/api", () => ({
   getJobs: vi.fn(),
   getJobHistory: vi.fn(),
   runJob: vi.fn(),
+  getStorage: vi.fn(),
+  createJob: vi.fn(),
+  updateJobConfig: vi.fn(),
+  deleteJob: vi.fn(),
+  getConfigDirty: vi.fn(),
+  saveConfigToFile: vi.fn(),
 }));
 
 vi.mock("next/link", () => ({
@@ -21,7 +27,7 @@ vi.mock("@uni-backups/ui/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
-import { getJobs, runJob } from "@/lib/api";
+import { getJobs, runJob, getStorage, getConfigDirty } from "@/lib/api";
 
 function paginatedJobs(jobs: Job[]) {
   return {
@@ -57,6 +63,8 @@ describe("JobsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockToast.mockClear();
+    vi.mocked(getStorage).mockResolvedValue({ storage: [] });
+    vi.mocked(getConfigDirty).mockResolvedValue({ dirty: false });
   });
 
   describe("loading state", () => {

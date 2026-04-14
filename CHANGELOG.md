@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-04-14
+
+### Added
+
+- Token-based API authentication with `/api/auth/session`, signed admin sessions, and a web sign-in gate
+- Environment support for `UNI_BACKUPS_API_TOKEN`, `UNI_BACKUPS_API_TOKEN_FILE`, `UNI_BACKUPS_RESTORE_ROOT`, and `UNI_BACKUPS_SESSION_TTL_MS`
+- `rclone` remote metadata in storage API responses
+- A dedicated web 404 page
+
+### Fixed
+
+- Job create, update, delete, and manual run flows now recover when the scheduler has not been initialized and return better error details
+- Path restores are now constrained to the managed restore root, reject symlink traversal, and clean up terminal/download artifacts on a bounded TTL
+- Worker failover now respects configured group membership, preferred primaries, and failover order, and stale Redis group memberships are reconciled
+- Config saves now preserve job `password_file` references when the underlying secret value has not changed
+- Worker Redis dumps now copy RDB files directly instead of reading them fully into memory
+
+### Changed
+
+- Dashboard, Jobs, Workers, and Restore requests now send auth credentials and surface clearer load or validation errors
+- Dashboard recent activity now prefers scheduler history and shows explicit run-status badges
+- Restore path targets are now relative to the server-managed restore root instead of arbitrary absolute container paths
+- Docker Compose, `.env.example`, README, and deployment docs now require `UNI_BACKUPS_API_TOKEN` for API startup
+- Repo names now use stricter validation that allows dots while rejecting invalid leading characters
+
 ## [0.2.1] - 2026-03-25
 
 ### Fixed

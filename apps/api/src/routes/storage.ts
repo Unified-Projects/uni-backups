@@ -120,6 +120,35 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: st
   ]);
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (true) {
+      const currentIndex = nextIndex++;
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      results[currentIndex] = await mapper(items[currentIndex]);
+    }
+  };
+
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  return results;
+}
+
 storage.get("/:name/stats", async (c) => {
   const name = c.req.param("name");
   const storageConfig = getStorage(name);
@@ -140,53 +169,51 @@ storage.get("/:name/stats", async (c) => {
 
   // Timeout for each repo stats check (150 seconds to match frontend timeout)
   const REPO_TIMEOUT_MS = 150000;
+  const MAX_CONCURRENT_REPO_STATS = 4;
 
-  const repoStatsPromises = Array.from(repos).map(async (repoName) => {
-    try {
-      const [statsResult, snapshotsResult] = await Promise.all([
-        withTimeout(
+  const repoStats = await mapWithConcurrency(
+    Array.from(repos),
+    MAX_CONCURRENT_REPO_STATS,
+    async (repoName) => {
+      try {
+        const statsResult = await withTimeout(
           restic.stats(storageConfig, repoName, resticPassword),
           REPO_TIMEOUT_MS,
           "Stats request timed out"
-        ),
-        withTimeout(
-          restic.listSnapshots(storageConfig, repoName, resticPassword),
-          REPO_TIMEOUT_MS,
-          "Snapshots request timed out"
-        ),
-      ]);
+        );
 
-      if (statsResult.success && statsResult.stats) {
-        return {
-          repo: repoName,
-          totalSize: statsResult.stats.total_size || 0,
-          totalFileCount: statsResult.stats.total_file_count || 0,
-          snapshotsCount: snapshotsResult.snapshots?.length || 0,
-        };
-      } else {
-        const errorMsg = statsResult.message || "Failed to get stats";
-        const isRepoNotExist = errorMsg.includes("repository does not exist") || errorMsg.includes("does not exist");
+        if (statsResult.success && statsResult.stats) {
+          return {
+            repo: repoName,
+            totalSize: statsResult.stats.total_size || 0,
+            totalFileCount: statsResult.stats.total_file_count || 0,
+            snapshotsCount: statsResult.stats.snapshots_count || 0,
+          };
+        } else {
+          const errorMsg = statsResult.message || "Failed to get stats";
+          const isRepoNotExist =
+            errorMsg.includes("repository does not exist") || errorMsg.includes("does not exist");
+
+          return {
+            repo: repoName,
+            totalSize: 0,
+            totalFileCount: 0,
+            snapshotsCount: 0,
+            error: isRepoNotExist ? "Repository not initialized (no backups yet)" : errorMsg,
+          };
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : "Unknown error";
         return {
           repo: repoName,
           totalSize: 0,
           totalFileCount: 0,
           snapshotsCount: 0,
-          error: isRepoNotExist ? "Repository not initialized (no backups yet)" : errorMsg,
+          error: errorMsg,
         };
       }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : "Unknown error";
-      return {
-        repo: repoName,
-        totalSize: 0,
-        totalFileCount: 0,
-        snapshotsCount: 0,
-        error: errorMsg,
-      };
     }
-  });
-
-  const repoStats = await Promise.all(repoStatsPromises);
+  );
 
   let totalSize = 0;
   let totalFileCount = 0;

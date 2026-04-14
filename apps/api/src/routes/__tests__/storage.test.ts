@@ -299,11 +299,7 @@ describe("Storage API Routes", () => {
       });
       vi.mocked(restic.stats).mockResolvedValue({
         success: true,
-        stats: { total_size: 1000, total_file_count: 50 },
-      });
-      vi.mocked(restic.listSnapshots).mockResolvedValue({
-        success: true,
-        snapshots: [{ id: "a" }, { id: "b" }] as any,
+        stats: { total_size: 1000, total_file_count: 50, snapshots_count: 2 },
       });
 
       const res = await app.request("/storage/local-storage/stats");
@@ -361,10 +357,6 @@ describe("Storage API Routes", () => {
         success: false,
         message: "repository does not exist",
       });
-      vi.mocked(restic.listSnapshots).mockResolvedValue({
-        success: false,
-        message: "repository does not exist",
-      });
 
       const res = await app.request("/storage/local-storage/stats");
       const json = await res.json();
@@ -392,16 +384,10 @@ describe("Storage API Routes", () => {
       vi.mocked(restic.stats).mockImplementation(async () => {
         statsCallCount++;
         if (statsCallCount === 1) {
-          return { success: true, stats: { total_size: 500, total_file_count: 25 } };
-        }
-        return { success: false, message: "connection timeout" };
-      });
-
-      let snapshotsCallCount = 0;
-      vi.mocked(restic.listSnapshots).mockImplementation(async () => {
-        snapshotsCallCount++;
-        if (snapshotsCallCount === 1) {
-          return { success: true, snapshots: [{ id: "a" }] as any };
+          return {
+            success: true,
+            stats: { total_size: 500, total_file_count: 25, snapshots_count: 1 },
+          };
         }
         return { success: false, message: "connection timeout" };
       });
@@ -453,11 +439,7 @@ describe("Storage API Routes", () => {
       });
       vi.mocked(restic.stats).mockResolvedValue({
         success: true,
-        stats: { total_size: 100, total_file_count: 5 },
-      });
-      vi.mocked(restic.listSnapshots).mockResolvedValue({
-        success: true,
-        snapshots: [{ id: "a" }] as any,
+        stats: { total_size: 100, total_file_count: 5, snapshots_count: 1 },
       });
 
       const res = await app.request("/storage/local-storage/stats");
@@ -479,7 +461,6 @@ describe("Storage API Routes", () => {
         storage: new Map(),
       });
       vi.mocked(restic.stats).mockRejectedValue(new Error("Stats request timed out"));
-      vi.mocked(restic.listSnapshots).mockRejectedValue(new Error("Snapshots request timed out"));
 
       const res = await app.request("/storage/local-storage/stats");
       const json = await res.json();
@@ -504,11 +485,7 @@ describe("Storage API Routes", () => {
       });
       vi.mocked(restic.stats).mockResolvedValue({
         success: true,
-        stats: { total_size: 1000, total_file_count: 50 },
-      });
-      vi.mocked(restic.listSnapshots).mockResolvedValue({
-        success: true,
-        snapshots: [{ id: "a" }] as any,
+        stats: { total_size: 1000, total_file_count: 50, snapshots_count: 1 },
       });
 
       const res = await app.request("/storage/local-storage/stats");
@@ -533,11 +510,7 @@ describe("Storage API Routes", () => {
       });
       vi.mocked(restic.stats).mockResolvedValue({
         success: true,
-        stats: { total_size: 2048, total_file_count: 100 },
-      });
-      vi.mocked(restic.listSnapshots).mockResolvedValue({
-        success: true,
-        snapshots: [{ id: "a" }, { id: "b" }, { id: "c" }] as any,
+        stats: { total_size: 2048, total_file_count: 100, snapshots_count: 3 },
       });
 
       const res = await app.request("/storage/local-storage/stats");

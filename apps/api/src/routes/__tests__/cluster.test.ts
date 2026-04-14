@@ -196,7 +196,7 @@ describe("Cluster API Routes", () => {
       expect(json.workers.details[0].jobsFailed).toBe(5);
     });
 
-    it("includes worker status breakdown", async () => {
+    it("uses effective worker status for the status breakdown", async () => {
       mockGetAllWorkers.mockResolvedValue([
         { id: "w1", status: "healthy", currentJobs: [], metrics: {} },
         { id: "w2", status: "healthy", currentJobs: [], metrics: {} },
@@ -211,8 +211,8 @@ describe("Cluster API Routes", () => {
       const json = await res.json();
 
       expect(json.workers.byStatus.healthy).toBe(2);
-      expect(json.workers.byStatus.degraded).toBe(1);
-      expect(json.workers.byStatus.offline).toBe(1);
+      expect(json.workers.byStatus.degraded).toBe(0);
+      expect(json.workers.byStatus.offline).toBe(2);
     });
 
     it("includes recent jobs", async () => {
@@ -525,7 +525,7 @@ describe("Cluster API Routes", () => {
         { id: "w2", status: "starting", currentJobs: [], metrics: {} },
         { id: "w3", status: "stopping", currentJobs: [], metrics: {} },
       ]);
-      mockGetHealthyWorkers.mockResolvedValue(["w1"]);
+      mockGetHealthyWorkers.mockResolvedValue(["w1", "w2", "w3"]);
       mockGetRecentJobs.mockResolvedValue([]);
       vi.mocked(getQueueStats).mockResolvedValue({ waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 });
 

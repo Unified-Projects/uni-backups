@@ -1,6 +1,8 @@
 import { spawn } from "child_process";
 import { mkdirSync, existsSync } from "fs";
+import { resolve, sep } from "path";
 import type { StorageConfig, Retention } from "@uni-backups/shared/config";
+import { RepoNameSchema } from "@uni-backups/shared/config";
 import { getResticCacheDir, getTempDir } from "@uni-backups/shared/config";
 
 export interface ResticSnapshot {
@@ -33,6 +35,21 @@ export interface ResticStats {
   snapshots_count?: number;
 }
 
+export function validateRepoName(repoName: string): string {
+  return RepoNameSchema.parse(repoName);
+}
+
+function buildLocalRepoPath(rootPath: string, repoName: string): string {
+  const resolvedRoot = resolve(rootPath);
+  const resolvedRepo = resolve(resolvedRoot, repoName);
+
+  if (resolvedRepo !== resolvedRoot && !resolvedRepo.startsWith(`${resolvedRoot}${sep}`)) {
+    throw new Error(`Repository "${repoName}" must stay within the configured storage root`);
+  }
+
+  return resolvedRepo;
+}
+
 interface ResticResult {
   success: boolean;
   stdout: string;
@@ -41,11 +58,13 @@ interface ResticResult {
 }
 
 export function buildRepoUrl(storage: StorageConfig, repoName: string): string {
+  const validatedRepoName = validateRepoName(repoName);
+
   switch (storage.type) {
     case "sftp":
       // SFTP URL format: sftp:user@host:path (port handled via ssh options)
       const sftpPath = storage.path.replace(/\/$/, "");
-      return `sftp:${storage.user}@${storage.host}:${sftpPath}/${repoName}`;
+      return `sftp:${storage.user}@${storage.host}:${sftpPath}/${validatedRepoName}`;
 
     case "s3":
       // For S3-compatible endpoints, preserve the protocol (http/https)
@@ -57,18 +76,18 @@ export function buildRepoUrl(storage: StorageConfig, repoName: string): string {
         s3Endpoint = "s3.amazonaws.com";
       }
       const s3Path = storage.path ? `/${storage.path.replace(/^\//, "")}` : "";
-      return `s3:${s3Endpoint}/${storage.bucket}${s3Path}/${repoName}`;
+      return `s3:${s3Endpoint}/${storage.bucket}${s3Path}/${validatedRepoName}`;
 
     case "rest":
       const restUrl = storage.url.replace(/\/$/, "");
-      return `rest:${restUrl}/${repoName}`;
+      return `rest:${restUrl}/${validatedRepoName}`;
 
     case "local":
-      return `${storage.path}/${repoName}`;
+      return buildLocalRepoPath(storage.path, validatedRepoName);
 
     case "rclone":
       const rclonePath = storage.path ? `${storage.path.replace(/\/$/, "")}` : "";
-      return `rclone:${storage.remote}:${rclonePath ? rclonePath + "/" + repoName : repoName}`;
+      return `rclone:${storage.remote}:${rclonePath ? `${rclonePath}/${validatedRepoName}` : validatedRepoName}`;
   }
 }
 

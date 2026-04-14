@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DashboardPage from "../page";
 import type { Job, Storage } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
   getJobs: vi.fn(),
+  getSchedule: vi.fn(),
   getStorage: vi.fn(),
 }));
 
@@ -15,7 +16,7 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-import { getJobs, getStorage } from "@/lib/api";
+import { getJobs, getSchedule, getStorage } from "@/lib/api";
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -50,11 +51,15 @@ function paginatedJobs(jobs: Job[]) {
 describe("DashboardPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getSchedule).mockResolvedValue({ scheduled: [], running: [], recent: [] });
   });
 
   describe("loading state", () => {
     it("renders loading skeletons when data is loading", async () => {
       vi.mocked(getJobs).mockImplementation(
+        () => new Promise(() => {})
+      );
+      vi.mocked(getSchedule).mockImplementation(
         () => new Promise(() => {})
       );
       vi.mocked(getStorage).mockImplementation(
@@ -72,6 +77,22 @@ describe("DashboardPage", () => {
 
       const skeletons = document.querySelectorAll('[class*="animate-pulse"], .skeleton');
       expect(skeletons.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("error state", () => {
+    it("shows an error alert when dashboard queries fail", async () => {
+      vi.mocked(getJobs).mockRejectedValue(new Error("Jobs API failed"));
+      vi.mocked(getStorage).mockResolvedValue({ storage: [] });
+
+      render(
+        <TestWrapper>
+          <DashboardPage />
+        </TestWrapper>
+      );
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("Jobs API failed");
     });
   });
 
@@ -191,6 +212,18 @@ describe("DashboardPage", () => {
       ]);
 
       vi.mocked(getJobs).mockResolvedValue(mockJobs);
+      vi.mocked(getSchedule).mockResolvedValue({
+        scheduled: [],
+        running: [],
+        recent: [
+          {
+            jobName: "backup-job",
+            startTime: "2024-01-15T10:00:00Z",
+            endTime: "2024-01-15T10:05:00Z",
+            status: "success",
+          },
+        ],
+      });
       vi.mocked(getStorage).mockResolvedValue({ storage: [] });
 
       render(
@@ -227,6 +260,71 @@ describe("DashboardPage", () => {
 
       expect(await screen.findByText("No backup runs yet")).toBeInTheDocument();
       expect(screen.getByText("Run a backup job to see activity here.")).toBeInTheDocument();
+    });
+
+    it("renders separate entries for repeated job executions", async () => {
+      const mockJobs = paginatedJobs([
+        {
+          name: "backup-job",
+          type: "volume",
+          storage: "local",
+          repo: "backup-job",
+          schedule: null,
+          isRunning: false,
+          lastRun: { status: "success", startTime: "2024-01-15T10:00:00Z", endTime: "2024-01-15T10:01:00Z" },
+        },
+      ]);
+
+      vi.mocked(getJobs).mockResolvedValue(mockJobs);
+      vi.mocked(getSchedule).mockResolvedValue({
+        scheduled: [],
+        running: [],
+        recent: [
+          {
+            jobName: "backup-job",
+            startTime: "2024-01-15T10:10:00Z",
+            endTime: "2024-01-15T10:11:00Z",
+            status: "failed",
+          },
+          {
+            jobName: "backup-job",
+            startTime: "2024-01-15T10:00:00Z",
+            endTime: "2024-01-15T10:01:00Z",
+            status: "success",
+          },
+        ],
+      });
+      vi.mocked(getStorage).mockResolvedValue({ storage: [] });
+
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        render(
+          <TestWrapper>
+            <DashboardPage />
+          </TestWrapper>
+        );
+
+        const sectionHeading = await screen.findByRole("heading", { name: "Recent Activity" });
+        const recentActivityCard = sectionHeading.parentElement?.parentElement;
+        expect(recentActivityCard).toBeTruthy();
+
+        const activityScope = within(recentActivityCard as HTMLElement);
+        const activityLinks = activityScope.getAllByRole("link", { name: "backup-job" });
+        const successBadges = activityScope.getAllByText("Success");
+        const failedBadges = activityScope.getAllByText("Failed");
+
+        expect(activityLinks).toHaveLength(2);
+        expect(successBadges).toHaveLength(1);
+        expect(failedBadges).toHaveLength(1);
+        expect(
+          consoleErrorSpy.mock.calls.some((args) =>
+            String(args[0]).includes("Encountered two children with the same key")
+          )
+        ).toBe(false);
+      } finally {
+        consoleErrorSpy.mockRestore();
+      }
     });
 
     it("displays job names in activity list", async () => {

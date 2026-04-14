@@ -39,6 +39,7 @@ import {
   getStorageRepos,
   getSnapshots,
   initiateRestore,
+  getRestoreStatus,
   getRestoreOperations,
 } from "@/lib/api";
 
@@ -58,6 +59,16 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
+}
+
+function getSelectTriggerButtons() {
+  return screen
+    .getAllByRole("combobox")
+    .filter((element) => element.tagName.toLowerCase() === "button");
+}
+
+function getTargetPathInput() {
+  return screen.getByPlaceholderText("team-a/postgres-restore") as HTMLInputElement;
 }
 
 describe("RestorePage", () => {
@@ -156,7 +167,7 @@ describe("RestorePage", () => {
       );
 
       expect(await screen.findByText("Storage")).toBeInTheDocument();
-      expect(screen.getByText("Select storage")).toBeInTheDocument();
+      expect(screen.getAllByText("Select storage").length).toBeGreaterThan(0);
     });
 
     it("shows repository selector", async () => {
@@ -273,7 +284,7 @@ describe("RestorePage", () => {
 
       await screen.findByText("Storage");
 
-      const repoTrigger = screen.getByRole("combobox", { name: /repository/i });
+      const repoTrigger = getSelectTriggerButtons()[1];
       expect(repoTrigger).toBeDisabled();
     });
 
@@ -294,7 +305,7 @@ describe("RestorePage", () => {
 
       await screen.findByText("Storage");
 
-      const snapshotTrigger = screen.getByRole("combobox", { name: /snapshot/i });
+      const snapshotTrigger = getSelectTriggerButtons()[2];
       expect(snapshotTrigger).toBeDisabled();
     });
 
@@ -309,19 +320,13 @@ describe("RestorePage", () => {
       vi.mocked(getStorageRepos).mockResolvedValue(mockRepos);
       vi.mocked(getRestoreOperations).mockResolvedValue(mockOperations);
 
+      mockSearchParams.set("storage", "local");
+
       render(
         <TestWrapper>
           <RestorePage />
         </TestWrapper>
       );
-
-      await screen.findByText("Storage");
-
-      const storageTrigger = screen.getByRole("combobox", { name: /storage/i });
-      fireEvent.click(storageTrigger);
-
-      const localOption = await screen.findByRole("option", { name: "local" });
-      fireEvent.click(localOption);
 
       await waitFor(() => {
         expect(getStorageRepos).toHaveBeenCalledWith("local");
@@ -354,25 +359,16 @@ describe("RestorePage", () => {
       vi.mocked(getSnapshots).mockResolvedValue(mockSnapshots);
       vi.mocked(getRestoreOperations).mockResolvedValue(mockOperations);
 
+      mockSearchParams.set("storage", "local");
+      mockSearchParams.set("repo", "repo1");
+
       render(
         <TestWrapper>
           <RestorePage />
         </TestWrapper>
       );
 
-      await screen.findByText("Storage");
-
-      const storageTrigger = screen.getByRole("combobox", { name: /storage/i });
-      fireEvent.click(storageTrigger);
-      const localOption = await screen.findByRole("option", { name: "local" });
-      fireEvent.click(localOption);
-
       await waitFor(() => expect(getStorageRepos).toHaveBeenCalledWith("local"));
-
-      const repoTrigger = screen.getByRole("combobox", { name: /repository/i });
-      fireEvent.click(repoTrigger);
-      const repo1Option = await screen.findByRole("option", { name: "repo1" });
-      fireEvent.click(repo1Option);
 
       await waitFor(() => {
         expect(getSnapshots).toHaveBeenCalledWith("local", "repo1");
@@ -400,7 +396,7 @@ describe("RestorePage", () => {
       expect(downloadRadio).toBeChecked();
     });
 
-    it("does not show target path input when download method is selected", async () => {
+    it("keeps target path input available when download method is selected", async () => {
       const mockStorage: { storage: Storage[] } = { storage: [] };
       const mockOperations: { operations: RestoreOperation[] } = { operations: [] };
 
@@ -415,7 +411,8 @@ describe("RestorePage", () => {
 
       await screen.findByText("Restore Method");
 
-      expect(screen.queryByText("Target Path")).not.toBeInTheDocument();
+      expect(screen.getByText("Target Path")).toBeInTheDocument();
+      expect(getTargetPathInput().value).toBe("");
     });
 
     it("shows target path input when path method is selected", async () => {
@@ -437,7 +434,7 @@ describe("RestorePage", () => {
       fireEvent.click(pathRadio);
 
       expect(await screen.findByText("Target Path")).toBeInTheDocument();
-      expect(screen.getByPlaceholderText("/path/to/restore")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("team-a/postgres-restore")).toBeInTheDocument();
     });
 
     it("shows helper text for target path", async () => {
@@ -458,7 +455,9 @@ describe("RestorePage", () => {
       const pathRadio = screen.getByRole("radio", { name: /restore to path/i });
       fireEvent.click(pathRadio);
 
-      expect(await screen.findByText("Path must be mounted in the container")).toBeInTheDocument();
+      expect(
+        await screen.findByText("Relative path inside the server-managed restore root")
+      ).toBeInTheDocument();
     });
   });
 
@@ -673,7 +672,7 @@ describe("RestorePage", () => {
   });
 
   describe("form submission", () => {
-    it("Start Restore button is disabled when form is incomplete", async () => {
+    it("shows validation error when form is incomplete", async () => {
       const mockStorage: { storage: Storage[] } = {
         storage: [{ name: "local", type: "local", path: "/backups" }],
       };
@@ -689,7 +688,9 @@ describe("RestorePage", () => {
       );
 
       const startButton = await screen.findByRole("button", { name: /start restore/i });
-      expect(startButton).toBeDisabled();
+      fireEvent.click(startButton);
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Please select a storage backend");
     });
 
     it("shows success toast on successful restore initiation", async () => {
@@ -717,11 +718,25 @@ describe("RestorePage", () => {
       vi.mocked(getStorageRepos).mockResolvedValue(mockRepos);
       vi.mocked(getSnapshots).mockResolvedValue(mockSnapshots);
       vi.mocked(getRestoreOperations).mockResolvedValue(mockOperations);
+      vi.mocked(getRestoreStatus).mockResolvedValue({
+        id: "restore-123",
+        storage: "local",
+        repo: "repo1",
+        snapshotId: "abc123",
+        paths: [],
+        method: "download",
+        status: "pending",
+        startTime: "2024-01-15T10:00:00Z",
+      });
       vi.mocked(initiateRestore).mockResolvedValue({
         id: "restore-123",
         status: "pending",
         message: "Restore initiated",
       });
+
+      mockSearchParams.set("storage", "local");
+      mockSearchParams.set("repo", "repo1");
+      mockSearchParams.set("snapshot", "abc123");
 
       render(
         <TestWrapper>
@@ -729,26 +744,8 @@ describe("RestorePage", () => {
         </TestWrapper>
       );
 
-      await screen.findByText("Storage");
-
-      const storageTrigger = screen.getByRole("combobox", { name: /storage/i });
-      fireEvent.click(storageTrigger);
-      const localOption = await screen.findByRole("option", { name: "local" });
-      fireEvent.click(localOption);
-
       await waitFor(() => expect(getStorageRepos).toHaveBeenCalled());
-
-      const repoTrigger = screen.getByRole("combobox", { name: /repository/i });
-      fireEvent.click(repoTrigger);
-      const repo1Option = await screen.findByRole("option", { name: "repo1" });
-      fireEvent.click(repo1Option);
-
       await waitFor(() => expect(getSnapshots).toHaveBeenCalled());
-
-      const snapshotTrigger = screen.getByRole("combobox", { name: /snapshot/i });
-      fireEvent.click(snapshotTrigger);
-      const snapshotOption = await screen.findByRole("option", { name: /abc123/i });
-      fireEvent.click(snapshotOption);
 
       const startButton = screen.getByRole("button", { name: /start restore/i });
       fireEvent.click(startButton);
@@ -790,32 +787,18 @@ describe("RestorePage", () => {
       vi.mocked(getRestoreOperations).mockResolvedValue(mockOperations);
       vi.mocked(initiateRestore).mockRejectedValue(new Error("Restore failed"));
 
+      mockSearchParams.set("storage", "local");
+      mockSearchParams.set("repo", "repo1");
+      mockSearchParams.set("snapshot", "abc123");
+
       render(
         <TestWrapper>
           <RestorePage />
         </TestWrapper>
       );
 
-      await screen.findByText("Storage");
-
-      const storageTrigger = screen.getByRole("combobox", { name: /storage/i });
-      fireEvent.click(storageTrigger);
-      const localOption = await screen.findByRole("option", { name: "local" });
-      fireEvent.click(localOption);
-
       await waitFor(() => expect(getStorageRepos).toHaveBeenCalled());
-
-      const repoTrigger = screen.getByRole("combobox", { name: /repository/i });
-      fireEvent.click(repoTrigger);
-      const repo1Option = await screen.findByRole("option", { name: "repo1" });
-      fireEvent.click(repo1Option);
-
       await waitFor(() => expect(getSnapshots).toHaveBeenCalled());
-
-      const snapshotTrigger = screen.getByRole("combobox", { name: /snapshot/i });
-      fireEvent.click(snapshotTrigger);
-      const snapshotOption = await screen.findByRole("option", { name: /abc123/i });
-      fireEvent.click(snapshotOption);
 
       const startButton = screen.getByRole("button", { name: /start restore/i });
       fireEvent.click(startButton);
@@ -854,7 +837,7 @@ describe("RestorePage", () => {
 
       // Wait for the form to render
       await waitFor(() => {
-        const targetPathInput = screen.getByLabelText(/target path/i) as HTMLInputElement;
+        const targetPathInput = getTargetPathInput();
         expect(targetPathInput).toBeInTheDocument();
         expect(targetPathInput.value).toBe("/data/important.txt");
       });
@@ -888,19 +871,18 @@ describe("RestorePage", () => {
 
       // Verify initial target path is populated
       await waitFor(() => {
-        const targetPathInput = screen.getByLabelText(/target path/i) as HTMLInputElement;
+        const targetPathInput = getTargetPathInput();
         expect(targetPathInput.value).toBe("/data/important.txt");
       });
 
       // Change storage
-      const storageTrigger = screen.getByRole("combobox", { name: /storage/i });
-      fireEvent.click(storageTrigger);
-      const s3Option = await screen.findByRole("option", { name: "s3" });
-      fireEvent.click(s3Option);
+      fireEvent.change(screen.getByLabelText("Storage backend"), {
+        target: { value: "s3" },
+      });
 
       // Verify target path is cleared
       await waitFor(() => {
-        const targetPathInput = screen.getByLabelText(/target path/i) as HTMLInputElement;
+        const targetPathInput = getTargetPathInput();
         expect(targetPathInput.value).toBe("");
       });
     });

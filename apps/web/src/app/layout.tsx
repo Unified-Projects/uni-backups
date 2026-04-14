@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { AuthGate } from "@/components/auth-gate";
 import { Providers } from "@/components/providers";
 import { Sidebar } from "@/components/sidebar";
 import { Toaster } from "@uni-backups/ui/components/toaster";
@@ -29,7 +30,9 @@ export default function RootLayout({
             <Sidebar />
             <main className="flex-1 overflow-y-auto overflow-x-hidden">
               <div className="container mx-auto p-6">
-                <ErrorBoundary>{children}</ErrorBoundary>
+                <AuthGate>
+                  <ErrorBoundary>{children}</ErrorBoundary>
+                </AuthGate>
               </div>
             </main>
           </div>

@@ -83,6 +83,43 @@ describe("StateManager", () => {
           workerState.id
         );
       });
+
+      it("should remove stale group memberships when a worker changes groups", async () => {
+        mockRedis.hgetall.mockResolvedValueOnce({
+          id: "worker-3",
+          name: "worker-3",
+          hostname: "host3",
+          groups: JSON.stringify(["default", "old-group"]),
+          status: "healthy",
+          lastHeartbeat: "1704067200000",
+          currentJobs: "[]",
+          metrics: JSON.stringify({ jobsProcessed: 0, jobsFailed: 0, lastJobTime: 0 }),
+        });
+
+        await stateManager.setWorkerState({
+          id: "worker-3",
+          name: "worker-3",
+          hostname: "host3",
+          groups: ["default", "new-group"],
+          status: "healthy",
+          lastHeartbeat: Date.now(),
+          currentJobs: [],
+          metrics: { jobsProcessed: 0, jobsFailed: 0, lastJobTime: 0 },
+        });
+
+        expect(mockRedis.srem).toHaveBeenCalledWith(
+          REDIS_KEYS.WORKERS_BY_GROUP("old-group"),
+          "worker-3"
+        );
+        expect(mockRedis.srem).not.toHaveBeenCalledWith(
+          REDIS_KEYS.WORKERS_BY_GROUP("default"),
+          "worker-3"
+        );
+        expect(mockRedis.sadd).toHaveBeenCalledWith(
+          REDIS_KEYS.WORKERS_BY_GROUP("new-group"),
+          "worker-3"
+        );
+      });
     });
 
     describe("getWorkerState", () => {

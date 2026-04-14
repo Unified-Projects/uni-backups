@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
-import { existsSync, mkdirSync, unlinkSync, writeFileSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, unlinkSync } from "fs";
+import { copyFile } from "fs/promises";
 import { join } from "path";
 import type { PostgresJob, MariadbJob, RedisJob, StorageConfig } from "@uni-backups/shared/config";
 import { ensureTempDir } from "./restic";
@@ -128,8 +129,7 @@ export async function dumpRedis(job: RedisJob): Promise<DumpResult> {
   const dumpPath = join(tempDir, `redis-${timestamp}.rdb`);
 
   if (job.rdb_path && existsSync(job.rdb_path)) {
-    const content = readFileSync(job.rdb_path);
-    writeFileSync(dumpPath, content);
+    await copyFile(job.rdb_path, dumpPath);
     return { success: true, dumpPath, message: "Redis RDB copied" };
   }
 
@@ -197,8 +197,7 @@ export async function dumpRedis(job: RedisJob): Promise<DumpResult> {
     return { success: false, message: `RDB file not found at ${rdbPath}` };
   }
 
-  const content = readFileSync(rdbPath);
-  writeFileSync(dumpPath, content);
+  await copyFile(rdbPath, dumpPath);
 
   return { success: true, dumpPath, message: "Redis RDB backed up" };
 }

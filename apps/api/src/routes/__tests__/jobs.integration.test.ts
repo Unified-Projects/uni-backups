@@ -314,8 +314,8 @@ jobs:
 
       expect(res.status).toBe(200);
 
-      const waiting = await backupQueue.getWaiting();
-      const jobInQueue = waiting.some((j) => j.data.executionId === json.executionId);
+      const queuedJobs = await backupQueue.getJobs(["waiting", "prioritized"]);
+      const jobInQueue = queuedJobs.some((j) => j.data.executionId === json.executionId);
       expect(jobInQueue).toBe(true);
     });
   });

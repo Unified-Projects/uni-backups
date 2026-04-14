@@ -166,6 +166,8 @@ workers.post("/groups/:groupId/failover", async (c) => {
   const healthyWorkers = new Set(await sm.getHealthyWorkers());
   const workersInGroup = await sm.getWorkersInGroup(groupId);
   const eligibleWorkers = workersInGroup.filter((w) => healthyWorkers.has(w));
+  const workersInGroupSet = new Set(workersInGroup);
+  const eligibleWorkerSet = new Set(eligibleWorkers);
 
   if (eligibleWorkers.length === 0) {
     return c.json({ error: "No healthy workers available for failover" }, 503);
@@ -173,10 +175,14 @@ workers.post("/groups/:groupId/failover", async (c) => {
 
   let newPrimaryId = body.newPrimaryId;
 
+  if (newPrimaryId && !workersInGroupSet.has(newPrimaryId)) {
+    return c.json({ error: `Worker "${newPrimaryId}" is not a member of group "${groupId}"` }, 400);
+  }
+
   if (!newPrimaryId) {
     // Use failover order if available, otherwise pick first healthy worker
     if (state.failoverOrder.length > 0) {
-      newPrimaryId = state.failoverOrder.find((w) => healthyWorkers.has(w));
+      newPrimaryId = state.failoverOrder.find((w) => eligibleWorkerSet.has(w));
     }
     if (!newPrimaryId) {
       newPrimaryId = eligibleWorkers[0];

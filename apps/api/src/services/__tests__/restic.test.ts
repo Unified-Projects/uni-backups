@@ -15,10 +15,14 @@ vi.mock("fs", () => ({
 }));
 
 // Mock config
-vi.mock("@uni-backups/shared/config", () => ({
-  getResticCacheDir: vi.fn(() => "/tmp/restic-cache"),
-  getTempDir: vi.fn(() => "/tmp/uni-backups"),
-}));
+vi.mock("@uni-backups/shared/config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@uni-backups/shared/config")>();
+  return {
+    ...actual,
+    getResticCacheDir: vi.fn(() => "/tmp/restic-cache"),
+    getTempDir: vi.fn(() => "/tmp/uni-backups"),
+  };
+});
 
 import { spawn } from "child_process";
 import { existsSync, mkdirSync } from "fs";

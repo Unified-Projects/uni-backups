@@ -694,10 +694,11 @@ export default function JobsPage() {
   const [runOpen, setRunOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["jobs", page, pageSize],
     queryFn: () => getJobs({ page, pageSize }),
     refetchInterval: 15000,
+    retry: false,
   });
 
   const { data: storageData } = useQuery({
@@ -766,6 +767,16 @@ export default function JobsPage() {
         <h1 className="text-3xl font-bold">Backup Jobs</h1>
         <p className="text-muted-foreground">Manage and monitor your backup jobs</p>
       </div>
+
+      {error && (
+        <div
+          data-testid="error"
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          {error.message || "Failed to load jobs."}
+        </div>
+      )}
 
       {successMsg && (
         <div data-testid="success-message" className="rounded-md bg-green-500/10 border border-green-500/20 p-3 text-sm text-green-600">

@@ -1,11 +1,13 @@
 import type Redis from "ioredis";
-import { Queue, QueueEvents } from "bullmq";
+import { Queue, QueueEvents, Worker } from "bullmq";
 import { getBullMQConnection, getRedisConnection } from "@uni-backups/shared/redis";
 import { StateManager } from "@uni-backups/shared/redis";
 import {
+  JOB_PRIORITY,
   QUEUES,
   type BackupJobData,
   type JobExecution,
+  type ScheduledJobData,
   getQueueConfig,
 } from "@uni-backups/queue";
 import { getConfig } from "@uni-backups/shared/config";
@@ -18,7 +20,11 @@ export interface SchedulerOptions {
 
 let backupQueue: Queue<BackupJobData> | null = null;
 let queueEvents: QueueEvents | null = null;
+let scheduleTriggerQueue: Queue<ScheduledJobData> | null = null;
+let scheduleTriggerWorker: Worker<ScheduledJobData, void> | null = null;
 let stateManager: StateManager | null = null;
+
+const SCHEDULE_TRIGGER_QUEUE = QUEUES.BACKUP_SCHEDULED;
 
 export async function initScheduler(options?: SchedulerOptions): Promise<void> {
   console.log("[Scheduler] Initializing BullMQ scheduler...");
@@ -32,6 +38,29 @@ export async function initScheduler(options?: SchedulerOptions): Promise<void> {
   });
   await backupQueue.waitUntilReady();
   await backupQueue.resume();
+
+  scheduleTriggerQueue = new Queue<ScheduledJobData>(SCHEDULE_TRIGGER_QUEUE, {
+    connection,
+    defaultJobOptions: getQueueConfig(QUEUES.BACKUP_SCHEDULED),
+  });
+  await scheduleTriggerQueue.waitUntilReady();
+
+  scheduleTriggerWorker = new Worker<ScheduledJobData, void>(
+    SCHEDULE_TRIGGER_QUEUE,
+    async (job) => {
+      const result = await queueJob(job.data.jobName, "schedule");
+      if (!result.queued) {
+        throw new Error(result.message);
+      }
+    },
+    {
+      connection,
+      concurrency: 1,
+      removeOnComplete: { count: 100 },
+      removeOnFail: { count: 100 },
+    }
+  );
+  await scheduleTriggerWorker.waitUntilReady();
 
   queueEvents = new QueueEvents(QUEUES.BACKUP_JOBS, { connection });
   await queueEvents.waitUntilReady();
@@ -52,14 +81,13 @@ export async function initScheduler(options?: SchedulerOptions): Promise<void> {
 }
 
 export async function syncSchedules(): Promise<void> {
-  if (!backupQueue) {
+  if (!scheduleTriggerQueue) {
     throw new Error("Scheduler not initialized");
   }
 
   const config = getConfig();
 
-  const existingRepeatables = await backupQueue.getRepeatableJobs();
-  const existingJobNames = new Set(existingRepeatables.map((r) => r.name));
+  const existingRepeatables = await scheduleTriggerQueue.getRepeatableJobs();
 
   console.log(`[Scheduler] Syncing schedules, found ${existingRepeatables.length} existing repeatables`);
   for (const r of existingRepeatables) {
@@ -74,21 +102,13 @@ export async function syncSchedules(): Promise<void> {
       const existingKey = existingRepeatables.find((r) => r.name === `schedule-${jobName}`)?.key;
       if (existingKey) {
         console.log(`[Scheduler] Removing existing schedule for "${jobName}" with key: ${existingKey}`);
-        await backupQueue.removeRepeatableByKey(existingKey);
+        await scheduleTriggerQueue.removeRepeatableByKey(existingKey);
       }
 
-      await backupQueue.add(
+      await scheduleTriggerQueue.add(
         `schedule-${jobName}`,
         {
-          executionId: "", // Will be set when job actually runs
           jobName,
-          jobConfig,
-          storage: config.storage.get(jobConfig.storage)!,
-          repoName: jobConfig.repo || jobName,
-          workerGroups: [jobConfig.worker_group],
-          priority: jobConfig.priority,
-          triggeredBy: "schedule",
-          queuedAt: 0, // Will be set when job actually runs
         },
         {
           repeat: {
@@ -109,7 +129,7 @@ export async function syncSchedules(): Promise<void> {
       const jobConfig = config.jobs.get(jobName);
 
       if (!jobConfig || !jobConfig.schedule) {
-        await backupQueue.removeRepeatableByKey(repeatable.key);
+        await scheduleTriggerQueue.removeRepeatableByKey(repeatable.key);
         console.log(`[Scheduler] Removed schedule for job "${jobName}"`);
       }
     }
@@ -118,7 +138,7 @@ export async function syncSchedules(): Promise<void> {
 
 export async function queueJob(
   jobName: string,
-  triggeredBy: "manual" | "failover" = "manual"
+  triggeredBy: "manual" | "failover" | "schedule" = "manual"
 ): Promise<{ executionId: string; queued: boolean; message: string }> {
   if (!backupQueue) {
     return { executionId: "", queued: false, message: "Scheduler not initialized" };
@@ -149,7 +169,7 @@ export async function queueJob(
     storage,
     repoName: jobConfig.repo || jobName,
     workerGroups: [jobConfig.worker_group],
-    priority: jobConfig.priority,
+    priority: jobConfig.priority ?? JOB_PRIORITY.NORMAL,
     triggeredBy,
     queuedAt: Date.now(),
   };
@@ -157,9 +177,10 @@ export async function queueJob(
   try {
     await backupQueue.add(`backup-${jobName}`, jobData, {
       jobId: executionId,
-      priority: jobConfig.priority,
+      priority: jobData.priority,
     });
   } catch (err) {
+    console.error(`[Scheduler] Failed to queue job "${jobName}":`, err);
     return {
       executionId: "",
       queued: false,
@@ -182,6 +203,16 @@ export async function stopScheduler(): Promise<void> {
     queueEvents = null;
   }
 
+  if (scheduleTriggerWorker) {
+    await scheduleTriggerWorker.close();
+    scheduleTriggerWorker = null;
+  }
+
+  if (scheduleTriggerQueue) {
+    await scheduleTriggerQueue.close();
+    scheduleTriggerQueue = null;
+  }
+
   if (backupQueue) {
     await backupQueue.close();
     backupQueue = null;
@@ -199,17 +230,15 @@ export async function getScheduledJobs(): Promise<
     nextRun?: Date;
   }>
 > {
-  if (!backupQueue) {
-    return [];
-  }
-
   const config = getConfig();
 
   let repeatables: Array<{ name?: string; next?: number }> = [];
-  try {
-    repeatables = await backupQueue.getRepeatableJobs();
-  } catch {
-    // proceed without nextRun times
+  if (scheduleTriggerQueue) {
+    try {
+      repeatables = await scheduleTriggerQueue.getRepeatableJobs();
+    } catch {
+      // proceed without nextRun times
+    }
   }
 
   const results: Array<{ name: string; schedule: string; nextRun?: Date }> = [];
@@ -229,11 +258,16 @@ export async function getScheduledJobs(): Promise<
 }
 
 export async function getRecentRuns(jobName?: string, limit = 50): Promise<JobExecution[]> {
-  if (!stateManager) {
-    stateManager = new StateManager(getRedisConnection());
-  }
+  try {
+    if (!stateManager) {
+      stateManager = new StateManager(getRedisConnection());
+    }
 
-  return stateManager.getRecentJobs(jobName, limit);
+    return await stateManager.getRecentJobs(jobName, limit);
+  } catch (error) {
+    console.error("[Scheduler] Failed to load recent runs:", error);
+    return [];
+  }
 }
 
 export async function getRunningJobs(): Promise<
@@ -243,17 +277,22 @@ export async function getRunningJobs(): Promise<
     queuedAt: number;
   }>
 > {
-  if (!backupQueue) {
+  try {
+    if (!backupQueue) {
+      return [];
+    }
+
+    const active = await backupQueue.getActive();
+
+    return active.map((job) => ({
+      jobName: job.data.jobName,
+      executionId: job.data.executionId,
+      queuedAt: job.data.queuedAt,
+    }));
+  } catch (error) {
+    console.error("[Scheduler] Failed to load running jobs:", error);
     return [];
   }
-
-  const active = await backupQueue.getActive();
-
-  return active.map((job) => ({
-    jobName: job.data.jobName,
-    executionId: job.data.executionId,
-    queuedAt: job.data.queuedAt,
-  }));
 }
 
 export async function getQueueStats(): Promise<{
@@ -264,37 +303,47 @@ export async function getQueueStats(): Promise<{
   delayed: number;
   paused: number;
 }> {
-  if (!backupQueue) {
+  try {
+    if (!backupQueue) {
+      return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, paused: 0 };
+    }
+
+    const counts = await backupQueue.getJobCounts();
+    return {
+      waiting: (counts.waiting || 0) + (counts.prioritized || 0),
+      active: counts.active || 0,
+      completed: counts.completed || 0,
+      failed: counts.failed || 0,
+      delayed: counts.delayed || 0,
+      paused: counts.paused || 0,
+    };
+  } catch (error) {
+    console.error("[Scheduler] Failed to load queue stats:", error);
     return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, paused: 0 };
   }
-
-  const counts = await backupQueue.getJobCounts();
-  return {
-    waiting: (counts.waiting || 0) + (counts.prioritized || 0),
-    active: counts.active || 0,
-    completed: counts.completed || 0,
-    failed: counts.failed || 0,
-    delayed: counts.delayed || 0,
-    paused: counts.paused || 0,
-  };
 }
 
 export async function isJobActive(jobName: string): Promise<boolean> {
-  if (!backupQueue) {
+  try {
+    if (!backupQueue) {
+      return false;
+    }
+
+    const [waiting, active, prioritized] = await Promise.all([
+      backupQueue.getWaiting(),
+      backupQueue.getActive(),
+      backupQueue.getJobs(["prioritized"]),
+    ]);
+
+    return (
+      waiting.some((j) => j.data.jobName === jobName) ||
+      active.some((j) => j.data.jobName === jobName) ||
+      prioritized.some((j) => j.data.jobName === jobName)
+    );
+  } catch (error) {
+    console.error(`[Scheduler] Failed to determine whether job "${jobName}" is active:`, error);
     return false;
   }
-
-  const [waiting, active, prioritized] = await Promise.all([
-    backupQueue.getWaiting(),
-    backupQueue.getActive(),
-    backupQueue.getJobs(["prioritized"]),
-  ]);
-
-  return (
-    waiting.some((j) => j.data.jobName === jobName) ||
-    active.some((j) => j.data.jobName === jobName) ||
-    prioritized.some((j) => j.data.jobName === jobName)
-  );
 }
 
 export function getBackupQueue(): Queue<BackupJobData> | null {

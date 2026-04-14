@@ -98,7 +98,7 @@ describe("API Client", () => {
         const result = await getStorage();
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/storage",
+          "/api/storage",
           expect.any(Object)
         );
         expect(result.storage).toHaveLength(2);
@@ -112,7 +112,7 @@ describe("API Client", () => {
         const result = await getStorageStatus("local");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/storage/local/status",
+          "/api/storage/local/status",
           expect.any(Object)
         );
         expect(result.status).toBe("connected");
@@ -126,7 +126,7 @@ describe("API Client", () => {
         const result = await getStorageRepos("local");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/storage/local/repos",
+          "/api/storage/local/repos",
           expect.any(Object)
         );
         expect(result.repos).toContain("repo1");
@@ -146,7 +146,7 @@ describe("API Client", () => {
         const result = await getJobs();
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/jobs",
+          "/api/jobs",
           expect.any(Object)
         );
         expect(result.jobs).toHaveLength(2);
@@ -165,7 +165,7 @@ describe("API Client", () => {
         const result = await getJob("test-job");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/jobs/test-job",
+          "/api/jobs/test-job",
           expect.any(Object)
         );
         expect(result.name).toBe("test-job");
@@ -179,7 +179,7 @@ describe("API Client", () => {
         const result = await runJob("test-job");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/jobs/test-job/run",
+          "/api/jobs/test-job/run",
           expect.objectContaining({ method: "POST" })
         );
         expect(result.status).toBe("queued");
@@ -198,7 +198,7 @@ describe("API Client", () => {
         const result = await getJobHistory("test-job");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/jobs/test-job/history",
+          "/api/jobs/test-job/history",
           expect.any(Object)
         );
         expect(result.snapshots).toHaveLength(1);
@@ -218,7 +218,7 @@ describe("API Client", () => {
         await getSnapshots("local", "test-repo");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/repos/local/test-repo/snapshots",
+          "/api/repos/local/test-repo/snapshots",
           expect.any(Object)
         );
       });
@@ -229,7 +229,7 @@ describe("API Client", () => {
         await getSnapshots("local", "test-repo", { tag: "daily" });
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/repos/local/test-repo/snapshots?tag=daily",
+          "/api/repos/local/test-repo/snapshots?tag=daily",
           expect.any(Object)
         );
       });
@@ -240,7 +240,7 @@ describe("API Client", () => {
         await getSnapshots("local", "test-repo", { latest: 5 });
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/repos/local/test-repo/snapshots?latest=5",
+          "/api/repos/local/test-repo/snapshots?latest=5",
           expect.any(Object)
         );
       });
@@ -272,7 +272,7 @@ describe("API Client", () => {
         const result = await getSnapshot("local", "test-repo", "abc123");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/repos/local/test-repo/snapshots/abc123",
+          "/api/repos/local/test-repo/snapshots/abc123",
           expect.any(Object)
         );
         expect(result.snapshot.id).toBe("abc123");
@@ -292,7 +292,7 @@ describe("API Client", () => {
         await listSnapshotFiles("local", "test-repo", "abc123");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/repos/local/test-repo/snapshots/abc123/ls",
+          "/api/repos/local/test-repo/snapshots/abc123/ls",
           expect.any(Object)
         );
       });
@@ -326,7 +326,7 @@ describe("API Client", () => {
         const result = await getRepoStats("local", "test-repo");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/repos/local/test-repo/stats",
+          "/api/repos/local/test-repo/stats",
           expect.any(Object)
         );
         expect(result.stats.total_size).toBe(1024);
@@ -345,7 +345,7 @@ describe("API Client", () => {
         await checkRepo("local", "test-repo");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/repos/local/test-repo/check",
+          "/api/repos/local/test-repo/check",
           expect.objectContaining({ method: "POST" })
         );
       });
@@ -361,7 +361,7 @@ describe("API Client", () => {
         await checkRepo("local", "test-repo", true);
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/repos/local/test-repo/check?readData=true",
+          "/api/repos/local/test-repo/check?readData=true",
           expect.objectContaining({ method: "POST" })
         );
       });
@@ -379,7 +379,7 @@ describe("API Client", () => {
         const result = await unlockRepo("local", "test-repo");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/repos/local/test-repo/unlock",
+          "/api/repos/local/test-repo/unlock",
           expect.objectContaining({ method: "POST" })
         );
         expect(result.success).toBe(true);
@@ -400,7 +400,7 @@ describe("API Client", () => {
         });
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/restore",
+          "/api/restore",
           expect.objectContaining({
             method: "POST",
             body: expect.stringContaining('"method":"download"'),
@@ -417,13 +417,13 @@ describe("API Client", () => {
           repo: "test-repo",
           snapshotId: "abc123",
           method: "path",
-          target: "/restore/target",
+          target: "team/restore-target",
         });
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/restore",
+          "/api/restore",
           expect.objectContaining({
-            body: expect.stringContaining('"target":"/restore/target"'),
+            body: expect.stringContaining('"target":"team/restore-target"'),
           })
         );
       });
@@ -440,7 +440,7 @@ describe("API Client", () => {
         });
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/restore",
+          "/api/restore",
           expect.objectContaining({
             body: expect.stringContaining('"/data/important"'),
           })
@@ -459,7 +459,7 @@ describe("API Client", () => {
         const result = await getRestoreStatus("restore-1");
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/restore/restore-1",
+          "/api/restore/restore-1",
           expect.any(Object)
         );
         expect(result.status).toBe("completed");
@@ -470,7 +470,7 @@ describe("API Client", () => {
       it("returns correct download URL", async () => {
         const url = await getRestoreDownloadUrl("restore-1");
 
-        expect(url).toBe("http://localhost:3001/api/restore/restore-1/download");
+        expect(url).toBe("/api/restore/restore-1/download");
       });
     });
 
@@ -486,7 +486,7 @@ describe("API Client", () => {
         const result = await getRestoreOperations();
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/restore",
+          "/api/restore",
           expect.any(Object)
         );
         expect(result.operations).toHaveLength(2);
@@ -500,13 +500,13 @@ describe("API Client", () => {
         mockSuccessResponse({
           scheduled: [{ name: "job1", schedule: "0 * * * *" }],
           running: [],
-          recentRuns: [],
+          recent: [],
         });
 
         const result = await getSchedule();
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/schedule",
+          "/api/schedule",
           expect.any(Object)
         );
         expect(result.scheduled).toHaveLength(1);
@@ -522,7 +522,7 @@ describe("API Client", () => {
         const result = await getRunningJobs();
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/schedule/running",
+          "/api/schedule/running",
           expect.any(Object)
         );
         expect(result.running).toHaveLength(1);
@@ -531,40 +531,40 @@ describe("API Client", () => {
 
     describe("getScheduleHistory", () => {
       it("fetches history without filters", async () => {
-        mockSuccessResponse({ runs: [] });
+        mockSuccessResponse({ history: [] });
 
         await getScheduleHistory();
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/schedule/history",
+          "/api/schedule/history",
           expect.any(Object)
         );
       });
 
       it("includes job filter", async () => {
-        mockSuccessResponse({ runs: [] });
+        mockSuccessResponse({ history: [] });
 
         await getScheduleHistory({ job: "test-job" });
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/schedule/history?job=test-job",
+          "/api/schedule/history?job=test-job",
           expect.any(Object)
         );
       });
 
       it("includes limit filter", async () => {
-        mockSuccessResponse({ runs: [] });
+        mockSuccessResponse({ history: [] });
 
         await getScheduleHistory({ limit: 10 });
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/api/schedule/history?limit=10",
+          "/api/schedule/history?limit=10",
           expect.any(Object)
         );
       });
 
       it("combines filters", async () => {
-        mockSuccessResponse({ runs: [] });
+        mockSuccessResponse({ history: [] });
 
         await getScheduleHistory({ job: "test-job", limit: 25 });
 
@@ -588,7 +588,7 @@ describe("API Client", () => {
         const result = await getHealth();
 
         expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:3001/health",
+          "/health",
           expect.any(Object)
         );
         expect(result.status).toBe("healthy");

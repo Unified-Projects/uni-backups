@@ -188,8 +188,12 @@ function RestoreContent() {
       setValidationError("Please select a snapshot");
       return;
     }
-    if (method === "path" && targetPath && !targetPath.startsWith("/")) {
-      setValidationError("Target path must be an absolute path (start with /)");
+    if (method === "path" && targetPath.startsWith("/")) {
+      setValidationError("Target path must be relative to the server restore root");
+      return;
+    }
+    if (method === "path" && !targetPath.trim()) {
+      setValidationError("Target path is required");
       return;
     }
     restoreMutation.mutate({
@@ -359,10 +363,10 @@ function RestoreContent() {
                   name="targetPath"
                   value={targetPath}
                   onChange={(e) => setTargetPath(e.target.value)}
-                  placeholder="/path/to/restore"
+                  placeholder="team-a/postgres-restore"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Path must be mounted in the container
+                  Relative path inside the server-managed restore root
                 </p>
               </div>
             </div>

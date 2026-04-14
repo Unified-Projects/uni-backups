@@ -103,11 +103,9 @@ describe("Scheduler (Real Redis)", () => {
         redisConnection: redis,
       });
 
-      // Verify job was scheduled
-      const queue = getBackupQueue();
-      const repeatables = await queue!.getRepeatableJobs();
-      expect(repeatables.length).toBeGreaterThan(0);
-      expect(repeatables.some((r) => r.name?.includes("daily-backup"))).toBe(true);
+      const scheduledJobs = await getScheduledJobs();
+      expect(scheduledJobs.length).toBeGreaterThan(0);
+      expect(scheduledJobs.some((job) => job.name === "daily-backup")).toBe(true);
     });
   });
 
@@ -131,9 +129,8 @@ describe("Scheduler (Real Redis)", () => {
 
       await syncSchedules();
 
-      const queue = getBackupQueue();
-      const repeatables = await queue!.getRepeatableJobs();
-      expect(repeatables.some((r) => r.name?.includes("new-job"))).toBe(true);
+      const scheduledJobs = await getScheduledJobs();
+      expect(scheduledJobs.some((job) => job.name === "new-job")).toBe(true);
     });
 
     it("should remove obsolete schedules", async () => {
@@ -149,19 +146,16 @@ describe("Scheduler (Real Redis)", () => {
 
       await syncSchedules();
 
-      // Verify job exists
-      const queue = getBackupQueue();
-      let repeatables = await queue!.getRepeatableJobs();
-      expect(repeatables.some((r) => r.name?.includes("temp-job"))).toBe(true);
+      let scheduledJobs = await getScheduledJobs();
+      expect(scheduledJobs.some((job) => job.name === "temp-job")).toBe(true);
 
       // Remove job from config
       mockJobs.delete("temp-job");
 
       await syncSchedules();
 
-      // Verify job was removed
-      repeatables = await queue!.getRepeatableJobs();
-      expect(repeatables.some((r) => r.name?.includes("temp-job"))).toBe(false);
+      scheduledJobs = await getScheduledJobs();
+      expect(scheduledJobs.some((job) => job.name === "temp-job")).toBe(false);
     });
 
     it("should update existing schedules", async () => {
@@ -187,12 +181,10 @@ describe("Scheduler (Real Redis)", () => {
 
       await syncSchedules();
 
-      // Verify new schedule
-      const queue = getBackupQueue();
-      const repeatables = await queue!.getRepeatableJobs();
-      const job = repeatables.find((r) => r.name?.includes("update-job"));
+      const scheduledJobs = await getScheduledJobs();
+      const job = scheduledJobs.find((scheduledJob) => scheduledJob.name === "update-job");
       expect(job).toBeDefined();
-      expect(job?.pattern).toBe("0 2 * * *");
+      expect(job?.schedule).toBe("0 2 * * *");
     });
   });
 

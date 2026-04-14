@@ -1,12 +1,25 @@
 import { Hono } from "hono";
-import { getStorage, getConfig } from "@uni-backups/shared/config";
+import { getStorage, getConfig, RepoNameSchema } from "@uni-backups/shared/config";
 import * as restic from "../services/restic";
 
 const repos = new Hono();
 
+function parseRepoName(repoName: string): { success: true; value: string } | { success: false; error: string } {
+  const parsed = RepoNameSchema.safeParse(repoName);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.errors[0]?.message || "Invalid repository name" };
+  }
+
+  return { success: true, value: parsed.data };
+}
+
 repos.get("/:storage/:repo/snapshots", async (c) => {
   const storageName = c.req.param("storage");
-  const repoName = c.req.param("repo");
+  const repoNameResult = parseRepoName(c.req.param("repo"));
+  if (!repoNameResult.success) {
+    return c.json({ error: repoNameResult.error }, 400);
+  }
+  const repoName = repoNameResult.value;
 
   const storage = getStorage(storageName);
   if (!storage) {
@@ -92,7 +105,11 @@ repos.get("/:storage/:repo/snapshots", async (c) => {
 
 repos.get("/:storage/:repo/snapshots/:id", async (c) => {
   const storageName = c.req.param("storage");
-  const repoName = c.req.param("repo");
+  const repoNameResult = parseRepoName(c.req.param("repo"));
+  if (!repoNameResult.success) {
+    return c.json({ error: repoNameResult.error }, 400);
+  }
+  const repoName = repoNameResult.value;
   const snapshotId = c.req.param("id");
 
   const storage = getStorage(storageName);
@@ -144,7 +161,11 @@ repos.get("/:storage/:repo/snapshots/:id", async (c) => {
 
 repos.get("/:storage/:repo/snapshots/:id/ls", async (c) => {
   const storageName = c.req.param("storage");
-  const repoName = c.req.param("repo");
+  const repoNameResult = parseRepoName(c.req.param("repo"));
+  if (!repoNameResult.success) {
+    return c.json({ error: repoNameResult.error }, 400);
+  }
+  const repoName = repoNameResult.value;
   const snapshotId = c.req.param("id");
 
   const storage = getStorage(storageName);
@@ -239,7 +260,11 @@ repos.get("/:storage/:repo/snapshots/:id/ls", async (c) => {
 
 repos.get("/:storage/:repo/stats", async (c) => {
   const storageName = c.req.param("storage");
-  const repoName = c.req.param("repo");
+  const repoNameResult = parseRepoName(c.req.param("repo"));
+  if (!repoNameResult.success) {
+    return c.json({ error: repoNameResult.error }, 400);
+  }
+  const repoName = repoNameResult.value;
 
   const storage = getStorage(storageName);
   if (!storage) {
@@ -290,7 +315,11 @@ repos.get("/:storage/:repo/stats", async (c) => {
 
 repos.post("/:storage/:repo/check", async (c) => {
   const storageName = c.req.param("storage");
-  const repoName = c.req.param("repo");
+  const repoNameResult = parseRepoName(c.req.param("repo"));
+  if (!repoNameResult.success) {
+    return c.json({ error: repoNameResult.error }, 400);
+  }
+  const repoName = repoNameResult.value;
 
   const storage = getStorage(storageName);
   if (!storage) {
@@ -350,7 +379,11 @@ repos.post("/:storage/:repo/check", async (c) => {
 
 repos.post("/:storage/:repo/unlock", async (c) => {
   const storageName = c.req.param("storage");
-  const repoName = c.req.param("repo");
+  const repoNameResult = parseRepoName(c.req.param("repo"));
+  if (!repoNameResult.success) {
+    return c.json({ error: repoNameResult.error }, 400);
+  }
+  const repoName = repoNameResult.value;
 
   const storage = getStorage(storageName);
   if (!storage) {

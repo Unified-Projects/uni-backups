@@ -4,7 +4,7 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export interface Storage {
   name: string;
-  type: "sftp" | "s3" | "rest" | "local";
+  type: "sftp" | "s3" | "rest" | "local" | "rclone";
   host?: string;
   port?: number;
   path?: string;
@@ -12,6 +12,7 @@ export interface Storage {
   bucket?: string;
   region?: string;
   url?: string;
+  remote?: string;
 }
 
 export interface JobRun {
@@ -98,6 +99,17 @@ export interface RestoreOperation {
   downloadReady?: boolean;
 }
 
+interface ScheduleRunningJob {
+  name: string;
+  startTime: string;
+  executionId?: string;
+}
+
+export interface AuthSession {
+  authenticated: boolean;
+  configured: boolean;
+}
+
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 150000);
@@ -106,6 +118,7 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   try {
     response = await fetch(`${API_URL}${path}`, {
       ...options,
+      credentials: options?.credentials ?? "include",
       signal: options?.signal ?? controller.signal,
       headers: {
         "Content-Type": "application/json",
@@ -179,6 +192,7 @@ export async function getJob(name: string): Promise<{
 export async function runJob(name: string): Promise<{ name: string; status: string; message: string }> {
   const response = await fetch(`${API_URL}/api/jobs/${name}/run`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
   });
 
@@ -305,14 +319,37 @@ export async function getRestoreOperations(): Promise<{ operations: RestoreOpera
 
 export async function getSchedule(): Promise<{
   scheduled: ScheduledJob[];
-  running: { name: string; startTime: string }[];
+  running: ScheduleRunningJob[];
   recent: (JobRun & { jobName: string })[];
 }> {
-  return fetchApi("/api/schedule");
+  const response = await fetchApi<{
+    scheduled: ScheduledJob[];
+    running: ({ name: string; startTime?: string; queuedAt?: string; executionId?: string })[];
+    recent: (JobRun & { jobName: string })[];
+  }>("/api/schedule");
+
+  return {
+    ...response,
+    running: response.running.map((job) => ({
+      name: job.name,
+      startTime: job.startTime ?? job.queuedAt ?? "",
+      executionId: job.executionId,
+    })),
+  };
 }
 
-export async function getRunningJobs(): Promise<{ running: { name: string; startTime: string }[] }> {
-  return fetchApi("/api/schedule/running");
+export async function getRunningJobs(): Promise<{ running: ScheduleRunningJob[] }> {
+  const response = await fetchApi<{
+    running: ({ name: string; startTime?: string; queuedAt?: string; executionId?: string })[];
+  }>("/api/schedule/running");
+
+  return {
+    running: response.running.map((job) => ({
+      name: job.name,
+      startTime: job.startTime ?? job.queuedAt ?? "",
+      executionId: job.executionId,
+    })),
+  };
 }
 
 export async function getScheduleHistory(options?: {
@@ -343,4 +380,21 @@ export interface BackupStats {
 
 export async function getBackupStats(): Promise<BackupStats> {
   return fetchApi("/api/schedule/stats");
+}
+
+export async function getAuthSession(): Promise<AuthSession> {
+  return fetchApi("/api/auth/session");
+}
+
+export async function loginWithToken(token: string): Promise<{ authenticated: boolean }> {
+  return fetchApi("/api/auth/session", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function logoutSession(): Promise<{ authenticated: boolean }> {
+  return fetchApi("/api/auth/session", {
+    method: "DELETE",
+  });
 }

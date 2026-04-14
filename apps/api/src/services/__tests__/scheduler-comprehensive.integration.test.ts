@@ -583,9 +583,15 @@ describe("Scheduler Comprehensive Tests", { timeout: 60000 }, () => {
 
       await scheduler.stopScheduler();
 
-      // After stop, getScheduledJobs should return empty (queue closed)
+      // After stop, scheduled jobs still reflect config, but nextRun is unavailable
+      // because the scheduler queue has been closed.
       scheduledJobs = await scheduler.getScheduledJobs();
-      expect(scheduledJobs).toHaveLength(0);
+      expect(scheduledJobs).toHaveLength(1);
+      expect(scheduledJobs[0]).toMatchObject({
+        name: "lifecycle-job",
+        schedule: "0 0 * * *",
+      });
+      expect(scheduledJobs[0].nextRun).toBeUndefined();
     });
 
     it("can reinitialize after stop", async () => {

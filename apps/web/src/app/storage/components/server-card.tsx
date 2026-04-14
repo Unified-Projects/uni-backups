@@ -42,6 +42,8 @@ function StorageIcon({ type }: { type: Storage["type"] }) {
       return <Database className="h-5 w-5" />;
     case "local":
       return <Folder className="h-5 w-5" />;
+    case "rclone":
+      return <HardDrive className="h-5 w-5" />;
     default:
       return <HardDrive className="h-5 w-5" />;
   }
@@ -53,6 +55,7 @@ function StorageTypeBadge({ type }: { type: Storage["type"] }) {
     s3: "bg-orange-500/10 text-orange-500",
     rest: "bg-purple-500/10 text-purple-500",
     local: "bg-green-500/10 text-green-500",
+    rclone: "bg-cyan-500/10 text-cyan-500",
   };
 
   return (
@@ -121,6 +124,8 @@ export function ServerCard({ storage, onSelect }: ServerCardProps) {
         return storage.url;
       case "local":
         return storage.path;
+      case "rclone":
+        return storage.path ? `${storage.remote}:${storage.path}` : storage.remote;
       default:
         return "Unknown";
     }

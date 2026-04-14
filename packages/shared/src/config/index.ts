@@ -5,7 +5,10 @@ export {
   getResticPassword,
   getResticCacheDir,
   getTempDir,
+  getRestoreRoot,
   getConfigFilePath,
+  getApiToken,
+  getSessionTtlMs,
   getCorsConfig,
   readFileSecret,
   readSecretFile,
@@ -36,6 +39,7 @@ export type {
 export {
   StorageConfigSchema,
   JobConfigSchema,
+  RepoNameSchema,
   ConfigFileSchema,
   RetentionSchema,
   WorkerGroupSchema,

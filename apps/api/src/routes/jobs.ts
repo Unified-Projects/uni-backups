@@ -8,8 +8,10 @@ import {
   getRunningJobs,
   getQueueStats,
   syncSchedules,
+  initScheduler,
 } from "../services/scheduler";
 import * as restic from "../services/restic";
+import { isTestEnvironment } from "../runtime";
 
 const jobs = new Hono();
 
@@ -210,6 +212,87 @@ function sanitizeName(name: string): string {
   });
 }
 
+function logJobsRouteError(
+  operation: string,
+  error: unknown,
+  context?: Record<string, unknown>
+): void {
+  const prefix = `[Jobs API] ${operation} failed`;
+
+  if (context) {
+    console.error(prefix, context);
+  } else {
+    console.error(prefix);
+  }
+
+  console.error(error);
+
+  if (error instanceof Error && error.stack) {
+    console.error(error.stack);
+  }
+}
+
+function buildJobsErrorPayload(message: string, error: unknown): Record<string, unknown> {
+  if (!isTestEnvironment()) {
+    return { error: message };
+  }
+
+  if (error instanceof Error) {
+    return {
+      error: message,
+      details: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        cause: error.cause instanceof Error ? error.cause.message : error.cause,
+      },
+    };
+  }
+
+  return {
+    error: message,
+    details: {
+      raw: String(error),
+    },
+  };
+}
+
+function isSchedulerNotInitializedError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return error.message.includes("Scheduler not initialized");
+  }
+
+  return false;
+}
+
+async function syncSchedulesWithRecovery(): Promise<void> {
+  try {
+    await syncSchedules();
+  } catch (error) {
+    if (!isSchedulerNotInitializedError(error)) {
+      throw error;
+    }
+
+    await initScheduler();
+    await syncSchedules();
+  }
+}
+
+async function queueJobWithRecovery(
+  name: string,
+  triggeredBy: Parameters<typeof queueJob>[1]
+): ReturnType<typeof queueJob> {
+  let result = await queueJob(name, triggeredBy);
+
+  if (result.queued || !result.message.includes("Scheduler not initialized")) {
+    return result;
+  }
+
+  await initScheduler();
+  result = await queueJob(name, triggeredBy);
+  return result;
+}
+
 jobs.post("/:name/run", async (c) => {
   const name = c.req.param("name");
   const jobConfig = getJob(name);
@@ -223,18 +306,26 @@ jobs.post("/:name/run", async (c) => {
     return c.json({ error: `Job "${name}" is already queued or running`, status: "already_running", name }, 409);
   }
 
-  const result = await queueJob(name, "manual");
+  try {
+    const result = await queueJobWithRecovery(name, "manual");
 
-  if (!result.queued) {
-    return c.json({ error: result.message }, 500);
+    if (!result.queued) {
+      const error = new Error(result.message);
+      logJobsRouteError("queue job", error, { jobName: name, triggeredBy: "manual" });
+      return c.json(buildJobsErrorPayload(result.message, error), 500);
+    }
+
+    return c.json({
+      name,
+      executionId: result.executionId,
+      status: "queued",
+      message: result.message,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : `Failed to queue job "${name}"`;
+    logJobsRouteError("queue job", error, { jobName: name, triggeredBy: "manual" });
+    return c.json(buildJobsErrorPayload(message, error), 500);
   }
-
-  return c.json({
-    name,
-    executionId: result.executionId,
-    status: "queued",
-    message: result.message,
-  });
 });
 
 jobs.get("/:name/history", async (c) => {
@@ -324,16 +415,34 @@ jobs.post("/", async (c) => {
     return c.json({ error: firstError.message, field: firstError.path.join(".") }, 400);
   }
 
-  if (getJob(name.trim())) {
-    updateJob(name.trim(), parsed.data);
-    syncSchedules().catch(() => {});
-    return c.json({ name: name.trim(), status: "updated", message: `Job "${name.trim()}" updated successfully` }, 200);
+  const trimmedName = name.trim();
+  const existingJob = getJob(trimmedName);
+
+  if (existingJob) {
+    updateJob(trimmedName, parsed.data);
+    try {
+      await syncSchedulesWithRecovery();
+    } catch (error) {
+      updateJob(trimmedName, existingJob);
+      const message = error instanceof Error ? error.message : "Failed to sync schedules";
+      logJobsRouteError("update job via POST", error, { jobName: trimmedName });
+      return c.json(buildJobsErrorPayload(message, error), 500);
+    }
+
+    return c.json({ name: trimmedName, status: "updated", message: `Job "${trimmedName}" updated successfully` }, 200);
   }
 
-  addJob(name.trim(), parsed.data);
-  syncSchedules().catch(() => {});
+  addJob(trimmedName, parsed.data);
+  try {
+    await syncSchedulesWithRecovery();
+  } catch (error) {
+    removeJob(trimmedName);
+    const message = error instanceof Error ? error.message : "Failed to sync schedules";
+    logJobsRouteError("create job", error, { jobName: trimmedName });
+    return c.json(buildJobsErrorPayload(message, error), 500);
+  }
 
-  return c.json({ name: name.trim(), status: "created", message: `Job "${name.trim()}" created successfully` }, 201);
+  return c.json({ name: trimmedName, status: "created", message: `Job "${trimmedName}" created successfully` }, 201);
 });
 
 jobs.put("/:name", async (c) => {
@@ -370,7 +479,14 @@ jobs.put("/:name", async (c) => {
   }
 
   updateJob(name, parsed.data);
-  syncSchedules().catch(() => {});
+  try {
+    await syncSchedulesWithRecovery();
+  } catch (error) {
+    updateJob(name, existing);
+    const message = error instanceof Error ? error.message : "Failed to sync schedules";
+    logJobsRouteError("update job", error, { jobName: name });
+    return c.json(buildJobsErrorPayload(message, error), 500);
+  }
 
   return c.json({ name, status: "updated", message: `Job "${name}" updated successfully` });
 });
@@ -389,7 +505,14 @@ jobs.delete("/:name", async (c) => {
   }
 
   removeJob(name);
-  syncSchedules().catch(() => {});
+  try {
+    await syncSchedulesWithRecovery();
+  } catch (error) {
+    updateJob(name, existing);
+    const message = error instanceof Error ? error.message : "Failed to sync schedules";
+    logJobsRouteError("delete job", error, { jobName: name });
+    return c.json(buildJobsErrorPayload(message, error), 500);
+  }
 
   return c.json({ name, status: "deleted", message: `Job "${name}" deleted successfully` });
 });
@@ -404,7 +527,8 @@ jobs.post("/config/save", async (c) => {
     return c.json({ success: true, message: "Config saved successfully" });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to save config";
-    return c.json({ error: msg }, 500);
+    logJobsRouteError("save config", err);
+    return c.json(buildJobsErrorPayload(msg, err), 500);
   }
 });
 

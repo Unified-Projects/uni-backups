@@ -65,6 +65,9 @@ export class StateManager {
   async setWorkerState(state: WorkerState): Promise<void> {
     const key = REDIS_KEYS.WORKER(state.id);
     const serialized = this.serializeWorkerState(state);
+    const previousState = await this.getWorkerState(state.id);
+    const previousGroups = new Set(previousState?.groups ?? []);
+    const nextGroups = new Set(state.groups);
 
     await this.redis.hset(key, serialized);
     await this.redis.zadd(
@@ -73,7 +76,13 @@ export class StateManager {
       state.id
     );
 
-    // Update group memberships
+    // Reconcile group memberships so stale group sets do not retain this worker.
+    for (const groupId of previousGroups) {
+      if (!nextGroups.has(groupId)) {
+        await this.redis.srem(REDIS_KEYS.WORKERS_BY_GROUP(groupId), state.id);
+      }
+    }
+
     for (const groupId of state.groups) {
       await this.redis.sadd(REDIS_KEYS.WORKERS_BY_GROUP(groupId), state.id);
     }

@@ -7,9 +7,14 @@
 mkdir -p config
 cp config/backups.example.yml config/backups.yml
 
-# 2. Edit config/backups.yml — add your storage and jobs
+# 2. Create runtime secrets
+cat > .env <<'EOF'
+UNI_BACKUPS_API_TOKEN=replace-with-a-long-random-token
+EOF
 
-# 3. Run
+# 3. Edit config/backups.yml — add your storage and jobs
+
+# 4. Run
 docker compose up -d
 ```
 
@@ -72,6 +77,8 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - UNI_BACKUPS_API_TOKEN=${UNI_BACKUPS_API_TOKEN}
+      - UNI_BACKUPS_API_TOKEN_FILE=${UNI_BACKUPS_API_TOKEN_FILE}
       - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.yml
     volumes:
       - ./config:/app/config:ro

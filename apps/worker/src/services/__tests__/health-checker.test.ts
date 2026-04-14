@@ -77,9 +77,9 @@ describe("HealthChecker", () => {
     });
 
     mockStateManager.getWorkersInGroup.mockResolvedValue([
-      { id: "worker-1", status: "healthy" },
-      { id: "worker-2", status: "healthy" },
-      { id: "worker-3", status: "healthy" },
+      "worker-1",
+      "worker-2",
+      "worker-3",
     ]);
 
     mockStateManager.getHealthyWorkers.mockResolvedValue(["worker-1", "worker-2", "worker-3"]);
@@ -117,7 +117,7 @@ describe("HealthChecker", () => {
       mockStateManager.getWorkerGroupState.mockClear();
 
       // Advance time to trigger periodic check
-      vi.advanceTimersByTime(10000);
+      await vi.advanceTimersByTimeAsync(10000);
 
       expect(mockStateManager.getWorkerGroupState).toHaveBeenCalled();
     });
@@ -259,6 +259,20 @@ describe("HealthChecker", () => {
       );
     });
 
+    it("does not promote a healthy worker outside the group", async () => {
+      mockStateManager.getHealthyWorkers.mockResolvedValue(["worker-9"]);
+      mockStateManager.getWorkerGroupState.mockResolvedValue({
+        id: "group-1",
+        primaryWorkerId: "worker-1",
+        failoverOrder: ["worker-2"],
+        quorumSize: 2,
+      });
+
+      await healthChecker.start();
+
+      expect(mockStateManager.updatePrimaryWorker).not.toHaveBeenCalled();
+    });
+
     it("handles no healthy workers available", async () => {
       mockStateManager.getHealthyWorkers.mockResolvedValue([]);
       mockStateManager.getWorkerGroupState.mockResolvedValue({
@@ -337,6 +351,25 @@ describe("HealthChecker", () => {
         "group-1",
         "worker-2"
       );
+    });
+
+    it("prefers configured primary on first election when healthy", async () => {
+      mockStateManager.getHealthyWorkers.mockResolvedValue(["worker-1", "worker-2", "worker-3"]);
+
+      await healthChecker.start();
+
+      expect(mockStateManager.updatePrimaryWorker).toHaveBeenCalledWith(
+        "group-1",
+        "worker-1"
+      );
+    });
+
+    it("does not elect a healthy worker that is outside configured membership", async () => {
+      mockStateManager.getHealthyWorkers.mockResolvedValue(["worker-9"]);
+
+      await healthChecker.start();
+
+      expect(mockStateManager.updatePrimaryWorker).not.toHaveBeenCalled();
     });
 
     it("acquires lock before election", async () => {
@@ -531,11 +564,11 @@ describe("HealthChecker", () => {
       mockStateManager.getWorkerGroupState.mockClear();
 
       // Default interval would trigger at 10000ms
-      vi.advanceTimersByTime(10000);
+      await vi.advanceTimersByTimeAsync(10000);
       expect(mockStateManager.getWorkerGroupState).not.toHaveBeenCalled();
 
       // Custom interval triggers at 30000ms
-      vi.advanceTimersByTime(20000);
+      await vi.advanceTimersByTimeAsync(20000);
       expect(mockStateManager.getWorkerGroupState).toHaveBeenCalled();
 
       await customChecker.stop();

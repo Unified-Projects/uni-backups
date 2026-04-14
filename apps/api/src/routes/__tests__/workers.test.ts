@@ -327,6 +327,27 @@ describe("Workers API Routes", () => {
       expect(res.status).toBe(400);
       expect(json.error).toContain("not healthy");
     });
+
+    it("returns 400 when specified worker is not a member of the group", async () => {
+      mockGetWorkerGroupState.mockResolvedValue({
+        primaryWorkerId: "worker-1",
+        failoverOrder: ["worker-2", "worker-9"],
+        quorumSize: 1,
+      });
+      mockGetHealthyWorkers.mockResolvedValue(["worker-2", "worker-9"]);
+      mockGetWorkersInGroup.mockResolvedValue(["worker-1", "worker-2"]);
+
+      const res = await app.request("/workers/groups/default/failover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPrimaryId: "worker-9" }),
+      });
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.error).toContain("not a member");
+      expect(mockUpdatePrimaryWorker).not.toHaveBeenCalled();
+    });
   });
 
   describe("DELETE /workers/:id", () => {
@@ -617,6 +638,28 @@ describe("Workers API Routes", () => {
       const json = await res.json();
 
       expect(json.newPrimary).toBe("worker-2"); // First healthy in failover order
+    });
+
+    it("ignores non-members when auto-selecting from failover order", async () => {
+      mockGetWorkerGroupState.mockResolvedValue({
+        primaryWorkerId: "worker-1",
+        failoverOrder: ["worker-9", "worker-2"],
+        quorumSize: 1,
+      });
+      mockGetHealthyWorkers.mockResolvedValue(["worker-2", "worker-9"]);
+      mockGetWorkersInGroup.mockResolvedValue(["worker-1", "worker-2"]);
+      mockAcquireFailoverLock.mockResolvedValue(true);
+
+      const res = await app.request("/workers/groups/default/failover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.newPrimary).toBe("worker-2");
+      expect(mockUpdatePrimaryWorker).toHaveBeenCalledWith("default", "worker-2");
     });
 
     it("falls back to first healthy worker when failover order empty", async () => {

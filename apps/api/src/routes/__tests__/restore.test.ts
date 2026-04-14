@@ -15,6 +15,7 @@ vi.mock("../../services/restic", () => ({
 
 vi.mock("fs", () => ({
   existsSync: vi.fn(),
+  lstatSync: vi.fn(),
   mkdirSync: vi.fn(),
   statSync: vi.fn(),
   unlinkSync: vi.fn(),
@@ -27,6 +28,8 @@ vi.mock("child_process", () => ({
 
 import { getStorage, getConfig, getTempDir } from "@uni-backups/shared/config";
 import * as restic from "../../services/restic";
+
+const VALID_TARGET = "team/restore-target";
 
 describe("Restore API Routes", () => {
   let app: Hono;
@@ -66,7 +69,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
         }),
       });
       const json = await res.json();
@@ -87,7 +90,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
         }),
       });
       const json = await res.json();
@@ -132,7 +135,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
         }),
       });
       const json = await res.json();
@@ -175,7 +178,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
           paths: ["/data/important"],
         }),
       });
@@ -208,7 +211,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
         }),
       });
       const { id } = await createRes.json();
@@ -284,7 +287,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
         }),
       });
 
@@ -312,7 +315,7 @@ describe("Restore API Routes", () => {
             repo: "test-repo",
             snapshotId: "abc12345",
             method: "path",
-            target: `/restore/target-${i}`,
+          target: `team/restore-target-${i}`,
           }),
         });
       }
@@ -338,7 +341,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
           paths: ["/data/file1.txt", "/data/file2.txt"],
         }),
       });
@@ -364,7 +367,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
           paths: [],
         }),
       });
@@ -392,7 +395,7 @@ describe("Restore API Routes", () => {
             repo: "test-repo",
             snapshotId: "abc12345",
             method: "path",
-            target: `/restore/target-${i}`,
+            target: `team/restore-target-${i}`,
           }),
         });
         const json = await res.json();
@@ -418,7 +421,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
         }),
       });
       const { id } = await res.json();
@@ -446,7 +449,7 @@ describe("Restore API Routes", () => {
           repo: "my-repo",
           snapshotId: "aabb1122",
           method: "path",
-          target: "/my/target/path",
+          target: "my/target/path",
         }),
       });
       const { id } = await createRes.json();
@@ -459,7 +462,7 @@ describe("Restore API Routes", () => {
       expect(json.repo).toBe("my-repo");
       expect(json.snapshotId).toBe("aabb1122");
       expect(json.method).toBe("path");
-      expect(json.target).toBe("/my/target/path");
+      expect(json.target).toBe("/tmp/restores/my/target/path");
       expect(json.downloadReady).toBe(false); // Path method never has download ready
     });
 
@@ -503,7 +506,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
         }),
       });
       const { id } = await createRes.json();
@@ -535,7 +538,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
         }),
       });
 
@@ -562,7 +565,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
         }),
       });
 
@@ -585,7 +588,7 @@ describe("Restore API Routes", () => {
           repo: "test-repo",
           snapshotId: "abc12345",
           method: "path",
-          target: "/restore/target",
+          target: VALID_TARGET,
         }),
       });
 

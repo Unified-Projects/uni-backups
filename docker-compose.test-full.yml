@@ -25,6 +25,7 @@ services:
       - UNI_BACKUPS_URL=http://haproxy
       - UNI_BACKUPS_API_PORT=3001
       - UNI_BACKUPS_RESTIC_PASSWORD=test-password
+      - UNI_BACKUPS_API_TOKEN=test-api-token
       - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.test-full.yml
       - UNI_BACKUPS_TEMP_DIR=/tmp/uni-backups
       - UNI_BACKUPS_RESTIC_CACHE_DIR=/tmp/restic-cache

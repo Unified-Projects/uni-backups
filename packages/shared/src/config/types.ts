@@ -81,9 +81,19 @@ export const RetentionSchema = z.object({
 });
 export type Retention = z.infer<typeof RetentionSchema>;
 
+export const RepoNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
+    "Repo name must start with an alphanumeric character and only contain letters, numbers, dots, underscores, or dashes"
+  );
+
 const BaseJobSchema = z.object({
   storage: z.string(),
-  repo: z.string().optional(),
+  repo: RepoNameSchema.optional(),
   schedule: z.string().optional(),
   retention: RetentionSchema.optional(),
   tags: z.array(z.string()).optional(),

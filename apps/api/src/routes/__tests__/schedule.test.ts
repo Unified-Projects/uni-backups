@@ -124,6 +124,42 @@ describe("Schedule API Routes", () => {
       expect(json.running).toEqual([]);
       expect(json.recent).toEqual([]);
     });
+
+    it("returns multiple recent runs for the same job when executions share the same timestamp", async () => {
+      const sharedStartTime = Date.now();
+
+      vi.mocked(getScheduledJobs).mockResolvedValue([]);
+      vi.mocked(getRunningJobs).mockResolvedValue([]);
+      vi.mocked(getRecentRuns).mockResolvedValue([
+        {
+          id: "run-1",
+          jobName: "scheduled-job",
+          startTime: sharedStartTime,
+          endTime: sharedStartTime + 1000,
+          status: "completed",
+          workerId: "worker-1",
+        },
+        {
+          id: "run-2",
+          jobName: "scheduled-job",
+          startTime: sharedStartTime,
+          endTime: sharedStartTime + 2000,
+          status: "failed",
+          error: "Lock timeout",
+          workerId: "worker-2",
+        },
+      ]);
+
+      const res = await app.request("/schedule");
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.recent).toHaveLength(2);
+      expect(json.recent[0].id).toBe("run-1");
+      expect(json.recent[1].id).toBe("run-2");
+      expect(json.recent[0].jobName).toBe("scheduled-job");
+      expect(json.recent[1].jobName).toBe("scheduled-job");
+    });
   });
 
   describe("GET /schedule/running", () => {

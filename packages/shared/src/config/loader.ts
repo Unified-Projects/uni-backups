@@ -10,6 +10,8 @@ import {
 } from "./types";
 import { getConfigFilePath, getResticPassword, getResticCacheDir, readSecretFile } from "./env";
 
+const SECRET_JOB_FIELDS = ["password"] as const;
+
 function loadConfigFile(filePath: string): {
   storage: Map<string, StorageConfig>;
   jobs: Map<string, JobConfig>;
@@ -17,9 +19,10 @@ function loadConfigFile(filePath: string): {
   redis?: RedisConfig;
   resticPassword?: string;
   resticCacheDir?: string;
+  rawConfig: Record<string, unknown>;
 } {
   const content = readFileSync(filePath, "utf-8");
-  const raw = parseYaml(content);
+  const raw = (parseYaml(content) as Record<string, unknown> | null) ?? {};
 
   const resolveSecrets = (obj: Record<string, unknown>): Record<string, unknown> => {
     const resolved: Record<string, unknown> = {};
@@ -63,7 +66,15 @@ function loadConfigFile(filePath: string): {
   const resticPassword = parsed.restic?.restic_password;
   const resticCacheDir = parsed.restic?.cache_dir;
 
-  return { storage, jobs, workerGroups, redis: parsed.redis, resticPassword, resticCacheDir };
+  return {
+    storage,
+    jobs,
+    workerGroups,
+    redis: parsed.redis,
+    resticPassword,
+    resticCacheDir,
+    rawConfig: raw,
+  };
 }
 
 function parseRedisFromEnv(): RedisConfig | undefined {
@@ -103,8 +114,10 @@ export function loadConfig(): RuntimeConfig {
     redis = fileConfig.redis;
     resticPassword = fileConfig.resticPassword;
     resticCacheDir = fileConfig.resticCacheDir;
+    _rawConfig = fileConfig.rawConfig;
   } else if (configFilePath) {
     console.warn(`Config file not found: ${configFilePath}`);
+    _rawConfig = {};
   }
 
   const envRedis = parseRedisFromEnv();
@@ -145,6 +158,7 @@ export function loadConfig(): RuntimeConfig {
 
 let _config: RuntimeConfig | null = null;
 let _dirty = false;
+let _rawConfig: Record<string, unknown> | null = null;
 
 export function getConfig(): RuntimeConfig {
   if (!_config) {
@@ -155,6 +169,7 @@ export function getConfig(): RuntimeConfig {
 
 export function resetConfigCache(): void {
   _config = null;
+  _rawConfig = null;
 }
 
 export function getStorage(name: string): StorageConfig | undefined {
@@ -220,20 +235,67 @@ export function saveConfig(): void {
   }
 
   let rawConfig: Record<string, unknown> = {};
-  if (existsSync(configFilePath)) {
-    rawConfig = parseYaml(readFileSync(configFilePath, "utf-8")) as Record<string, unknown>;
+  if (_rawConfig) {
+    rawConfig = structuredClone(_rawConfig);
+  } else if (existsSync(configFilePath)) {
+    rawConfig = ((parseYaml(readFileSync(configFilePath, "utf-8")) as Record<string, unknown> | null) ?? {});
   }
+
+  const rawJobs =
+    rawConfig.jobs && typeof rawConfig.jobs === "object" && !Array.isArray(rawConfig.jobs)
+      ? (rawConfig.jobs as Record<string, unknown>)
+      : {};
+
+  const serializeJob = (name: string, job: JobConfig): Record<string, unknown> => {
+    const jobData: Record<string, unknown> = {};
+    const rawJob =
+      rawJobs[name] && typeof rawJobs[name] === "object" && !Array.isArray(rawJobs[name])
+        ? (rawJobs[name] as Record<string, unknown>)
+        : {};
+
+    for (const [k, v] of Object.entries(job)) {
+      if (v === undefined || v === null) continue;
+
+      let preserved = false;
+      if (SECRET_JOB_FIELDS.includes(k as (typeof SECRET_JOB_FIELDS)[number])) {
+        const fileKey = `${k}_file`;
+        const filePath = rawJob[fileKey];
+        if (typeof filePath === "string") {
+          try {
+            const resolvedSecret = readSecretFile(filePath);
+            if (resolvedSecret === v) {
+              jobData[fileKey] = filePath;
+              preserved = true;
+            }
+          } catch {
+            jobData[k] = v;
+            preserved = true;
+          }
+        }
+      }
+
+      if (!preserved) {
+        jobData[k] = v;
+      }
+    }
+
+    for (const secretField of SECRET_JOB_FIELDS) {
+      const fileKey = `${secretField}_file`;
+      if (!(secretField in jobData) && typeof rawJob[fileKey] === "string") {
+        jobData[fileKey] = rawJob[fileKey];
+      }
+    }
+
+    return jobData;
+  };
 
   const jobsObj: Record<string, unknown> = {};
   for (const [name, job] of getConfig().jobs.entries()) {
-    const jobData: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(job)) {
-      if (v !== undefined && v !== null) jobData[k] = v;
-    }
-    jobsObj[name] = jobData;
+    jobsObj[name] = serializeJob(name, job);
   }
   rawConfig.jobs = jobsObj;
 
   writeFileSync(configFilePath, stringifyYaml(rawConfig, { lineWidth: 0 }), "utf-8");
+  _rawConfig = rawConfig;
   _dirty = false;
 }

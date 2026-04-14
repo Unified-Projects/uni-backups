@@ -3,10 +3,14 @@ import { Hono } from "hono";
 import repos from "../repos";
 
 // Mock dependencies
-vi.mock("@uni-backups/shared/config", () => ({
-  getStorage: vi.fn(),
-  getConfig: vi.fn(),
-}));
+vi.mock("@uni-backups/shared/config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@uni-backups/shared/config")>();
+  return {
+    ...actual,
+    getStorage: vi.fn(),
+    getConfig: vi.fn(),
+  };
+});
 
 vi.mock("../../services/restic", () => ({
   listSnapshots: vi.fn(),

@@ -1,10 +1,14 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { getCorsConfig } from "@uni-backups/shared/config";
+import { getApiToken, getCorsConfig } from "@uni-backups/shared/config";
 import { getRedisConnection, closeRedisConnections } from "@uni-backups/shared/redis";
 import { initScheduler, stopScheduler } from "./services/scheduler";
+import { authMiddleware } from "./security/auth";
+import { rateLimitMiddleware } from "./security/rate-limit";
+import { isTestEnvironment } from "./runtime";
 
+import authRoutes from "./routes/auth";
 import storageRoutes from "./routes/storage";
 import jobsRoutes from "./routes/jobs";
 import reposRoutes from "./routes/repos";
@@ -51,6 +55,10 @@ app.get("/health", async (c) => {
   }
 });
 
+app.use("/api/*", rateLimitMiddleware());
+app.use("/api/*", authMiddleware());
+
+app.route("/api/auth", authRoutes);
 app.route("/api/storage", storageRoutes);
 app.route("/api/jobs", jobsRoutes);
 app.route("/api/repos", reposRoutes);
@@ -62,7 +70,7 @@ app.route("/api/cluster", clusterRoutes);
 app.get("/", (c) => {
   return c.json({
     name: "Uni-Backups API",
-    version: "0.1.1",
+    version: "0.2.2",
     endpoints: {
       health: "/health",
       storage: "/api/storage",
@@ -78,6 +86,12 @@ app.get("/", (c) => {
 
 async function init() {
   console.log("[API] Initializing services...");
+
+  if (!getApiToken() && !isTestEnvironment()) {
+    throw new Error(
+      "UNI_BACKUPS_API_TOKEN or UNI_BACKUPS_API_TOKEN_FILE must be configured before starting the API"
+    );
+  }
 
   try {
     const redis = getRedisConnection();

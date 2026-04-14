@@ -23,6 +23,10 @@ vi.mock("fs", () => ({
   readFileSync: vi.fn(),
 }));
 
+vi.mock("fs/promises", () => ({
+  copyFile: vi.fn(),
+}));
+
 // Mock restic service - must use correct relative path from test file
 vi.mock("../restic", () => ({
   ensureTempDir: vi.fn(() => "/tmp/uni-backups"),
@@ -31,7 +35,8 @@ vi.mock("../restic", () => ({
 }));
 
 import { spawn } from "child_process";
-import { existsSync, unlinkSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, unlinkSync } from "fs";
+import { copyFile } from "fs/promises";
 import * as restic from "../restic";
 import {
   dumpPostgres,
@@ -275,14 +280,16 @@ describe("Database Dump Service", () => {
 
     it("copies RDB file when rdb_path exists", async () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockReturnValue(Buffer.from("RDB DATA"));
+      vi.mocked(copyFile).mockResolvedValue(undefined);
 
       const result = await dumpRedis({ ...baseJob, rdb_path: "/var/lib/redis/dump.rdb" });
 
       expect(result.success).toBe(true);
       expect(result.message).toBe("Redis RDB copied");
-      expect(readFileSync).toHaveBeenCalledWith("/var/lib/redis/dump.rdb");
-      expect(writeFileSync).toHaveBeenCalled();
+      expect(copyFile).toHaveBeenCalledWith(
+        "/var/lib/redis/dump.rdb",
+        expect.stringContaining("redis-")
+      );
     });
 
     it("triggers BGSAVE when no rdb_path provided", async () => {
@@ -290,7 +297,7 @@ describe("Database Dump Service", () => {
         if (typeof path === "string" && path.includes("dump.rdb")) return true;
         return false;
       });
-      vi.mocked(readFileSync).mockReturnValue(Buffer.from("RDB DATA"));
+      vi.mocked(copyFile).mockResolvedValue(undefined);
 
       let callCount = 0;
       vi.mocked(spawn).mockImplementation(() => {
@@ -325,7 +332,7 @@ describe("Database Dump Service", () => {
 
     it("includes password in redis-cli args when provided", async () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockReturnValue(Buffer.from("RDB"));
+      vi.mocked(copyFile).mockResolvedValue(undefined);
       vi.mocked(spawn).mockReturnValue(
         createMockProcess("OK", "", 0) as any
       );
@@ -390,13 +397,13 @@ describe("Database Dump Service", () => {
 
     it("uses custom port and host", async () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockReturnValue(Buffer.from("RDB"));
+      vi.mocked(copyFile).mockResolvedValue(undefined);
 
       const customJob = { ...baseJob, host: "redis.example.com", port: 6380, rdb_path: "/data/redis.rdb" };
       await dumpRedis(customJob);
 
       // Just verify it doesn't error with custom config
-      expect(readFileSync).toHaveBeenCalledWith("/data/redis.rdb");
+      expect(copyFile).toHaveBeenCalledWith("/data/redis.rdb", expect.any(String));
     });
   });
 
@@ -487,7 +494,7 @@ describe("Database Dump Service", () => {
 
     it("runs full redis backup workflow", async () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockReturnValue(Buffer.from("RDB DATA"));
+      vi.mocked(copyFile).mockResolvedValue(undefined);
 
       const job: RedisJob = {
         type: "redis",

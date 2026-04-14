@@ -331,13 +331,13 @@ jobs:
       expect(res.status).toBe(404);
     });
 
-    it("returns 404 for special characters in repo name", async () => {
-      // local-storage exists; the XSS string is used as a repo name which restic
-      // will not find — route maps the not-found restic error to 404.
+    it("returns 400 for special characters in repo name", async () => {
+      // local-storage exists, but the route rejects this repo name during input
+      // validation before any restic lookup happens.
       const res = await app.request(
         `/repos/local-storage/${encodeURIComponent("<script>alert(1)</script>")}/snapshots`
       );
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(400);
 
       const json = await res.json();
       expect(json).toHaveProperty("error");

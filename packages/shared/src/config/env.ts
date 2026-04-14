@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from "fs";
 import { z } from "zod";
 
-const SECRET_ENV_KEYS = ["UNI_BACKUPS_RESTIC_PASSWORD"] as const;
+const SECRET_ENV_KEYS = ["UNI_BACKUPS_RESTIC_PASSWORD", "UNI_BACKUPS_API_TOKEN"] as const;
 
 export function readFileSecret(envKey: string): string | undefined {
   const fileEnvKey = `${envKey}_FILE`;
@@ -55,8 +55,11 @@ const envSchema = z.object({
   UNI_BACKUPS_URL: z.string().default("http://localhost"),
   UNI_BACKUPS_CONFIG_FILE: z.string().optional(),
   UNI_BACKUPS_RESTIC_PASSWORD: z.string().optional(),
+  UNI_BACKUPS_API_TOKEN: z.string().optional(),
   UNI_BACKUPS_RESTIC_CACHE_DIR: z.string().default("/tmp/restic-cache"),
   UNI_BACKUPS_TEMP_DIR: z.string().default("/tmp/uni-backups"),
+  UNI_BACKUPS_RESTORE_ROOT: z.string().optional(),
+  UNI_BACKUPS_SESSION_TTL_MS: z.coerce.number().int().positive().default(1000 * 60 * 60 * 12),
   UNI_BACKUPS_CORS_ENABLED: z
     .union([z.boolean(), z.string()])
     .transform(coerceBoolean)
@@ -106,8 +109,20 @@ export function getTempDir(): string {
   return getEnv().UNI_BACKUPS_TEMP_DIR;
 }
 
+export function getRestoreRoot(): string {
+  return getEnv().UNI_BACKUPS_RESTORE_ROOT || `${getTempDir()}/restore-targets`;
+}
+
 export function getConfigFilePath(): string | undefined {
   return getEnv().UNI_BACKUPS_CONFIG_FILE;
+}
+
+export function getApiToken(): string | undefined {
+  return getEnv().UNI_BACKUPS_API_TOKEN;
+}
+
+export function getSessionTtlMs(): number {
+  return getEnv().UNI_BACKUPS_SESSION_TTL_MS;
 }
 
 export function getCorsConfig(): { enabled: boolean; origins: string[] } {

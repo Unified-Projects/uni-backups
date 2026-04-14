@@ -21,6 +21,7 @@ Backup management with restic. Volumes, databases, scheduled jobs, retention pol
 ```bash
 cp .env.example .env
 cp config/backups.example.yml config/backups.yml
+# Edit .env and set UNI_BACKUPS_API_TOKEN before starting
 docker compose up -d
 ```
 
@@ -31,6 +32,7 @@ Available at `http://localhost`.
 **.env**
 ```bash
 UNI_BACKUPS_RESTIC_PASSWORD=your-secure-password
+UNI_BACKUPS_API_TOKEN=replace-with-a-long-random-token
 ```
 
 **config/backups.yml**

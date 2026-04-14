@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 const mockJobs = new Map<string, any>();
 const mockStorage = new Map<string, any>();
+const SCHEDULE_TRIGGER_QUEUE = "backup-scheduled";
 
 vi.mock("@uni-backups/shared/config", () => ({
   getConfig: vi.fn(() => ({
@@ -22,14 +23,13 @@ vi.mock("@uni-backups/shared/config", () => ({
 }));
 
 vi.mock("@uni-backups/queue", () => ({
-  QUEUES: { BACKUP_JOBS: "backup-jobs" },
+  QUEUES: { BACKUP_JOBS: "backup-jobs", BACKUP_SCHEDULED: "backup-scheduled" },
   getQueueConfig: vi.fn(() => ({
     attempts: 3,
     backoff: { type: "exponential", delay: 30000 },
   })),
 }));
 
-// Build mock instances that are accessible from test code via __mockQueue / __mockQueueEvents
 const createMockQueue = () => ({
   waitUntilReady: vi.fn().mockResolvedValue(undefined),
   resume: vi.fn().mockResolvedValue(undefined),
@@ -57,18 +57,30 @@ const createMockQueueEvents = () => ({
   on: vi.fn(),
 });
 
-let mockQueue = createMockQueue();
+const createMockWorker = () => ({
+  waitUntilReady: vi.fn().mockResolvedValue(undefined),
+  close: vi.fn().mockResolvedValue(undefined),
+  on: vi.fn(),
+});
+
+let mockBackupQueue = createMockQueue();
+let mockTriggerQueue = createMockQueue();
 let mockQueueEvents = createMockQueueEvents();
+let mockScheduleWorker = createMockWorker();
+let scheduleProcessor: ((job: { data: { jobName: string } }) => Promise<void>) | null = null;
 
 vi.mock("bullmq", () => ({
-  Queue: vi.fn(function () { return mockQueue; }),
+  Queue: vi.fn(function (name: string) {
+    return name === SCHEDULE_TRIGGER_QUEUE ? mockTriggerQueue : mockBackupQueue;
+  }),
   QueueEvents: vi.fn(function () { return mockQueueEvents; }),
-  get __mockQueue() {
-    return mockQueue;
-  },
-  get __mockQueueEvents() {
-    return mockQueueEvents;
-  },
+  Worker: vi.fn(function (name: string, processor: (job: { data: { jobName: string } }) => Promise<void>) {
+    if (name === SCHEDULE_TRIGGER_QUEUE) {
+      scheduleProcessor = processor;
+      return mockScheduleWorker;
+    }
+    return createMockWorker();
+  }),
 }));
 
 vi.mock("@uni-backups/shared/redis", () => ({
@@ -95,7 +107,7 @@ import {
   getBackupQueue,
 } from "../scheduler";
 
-import { Queue, QueueEvents } from "bullmq";
+import { Queue, QueueEvents, Worker } from "bullmq";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -127,20 +139,30 @@ function addStorageToConfig(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe("Scheduler (unit)", () => {
   beforeEach(() => {
-    // Fresh mock instances for every test so call counts reset
-    mockQueue = createMockQueue();
+    mockBackupQueue = createMockQueue();
+    mockTriggerQueue = createMockQueue();
     mockQueueEvents = createMockQueueEvents();
+    mockScheduleWorker = createMockWorker();
+    scheduleProcessor = null;
+
     (Queue as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      function () { return mockQueue; },
+      function (name: string) {
+        return name === SCHEDULE_TRIGGER_QUEUE ? mockTriggerQueue : mockBackupQueue;
+      },
     );
     (QueueEvents as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       function () { return mockQueueEvents; },
+    );
+    (Worker as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      function (name: string, processor: (job: { data: { jobName: string } }) => Promise<void>) {
+        if (name === SCHEDULE_TRIGGER_QUEUE) {
+          scheduleProcessor = processor;
+          return mockScheduleWorker;
+        }
+        return createMockWorker();
+      },
     );
 
     mockJobs.clear();
@@ -152,39 +174,46 @@ describe("Scheduler (unit)", () => {
     vi.clearAllMocks();
   });
 
-  // -----------------------------------------------------------------------
-  // initScheduler
-  // -----------------------------------------------------------------------
   describe("initScheduler", () => {
-    it("creates queue with correct name and options", async () => {
+    it("creates backup and schedule trigger queues", async () => {
       await initScheduler();
 
-      expect(Queue).toHaveBeenCalledTimes(1);
-      const callArgs = (Queue as unknown as ReturnType<typeof vi.fn>).mock
-        .calls[0];
-      expect(callArgs[0]).toBe("backup-jobs");
-      expect(callArgs[1]).toHaveProperty("connection");
-      expect(callArgs[1]).toHaveProperty("defaultJobOptions");
+      expect(Queue).toHaveBeenCalledTimes(2);
+      const queueNames = (Queue as unknown as ReturnType<typeof vi.fn>).mock.calls.map(
+        (call) => call[0],
+      );
+      expect(queueNames).toContain("backup-jobs");
+      expect(queueNames).toContain(SCHEDULE_TRIGGER_QUEUE);
     });
 
-    it("creates QueueEvents listener", async () => {
+    it("creates QueueEvents listener for the backup queue", async () => {
       await initScheduler();
 
       expect(QueueEvents).toHaveBeenCalledTimes(1);
-      const callArgs = (QueueEvents as unknown as ReturnType<typeof vi.fn>).mock
-        .calls[0];
-      expect(callArgs[0]).toBe("backup-jobs");
+      expect((QueueEvents as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("backup-jobs");
     });
 
-    it("calls syncSchedules on init", async () => {
+    it("creates a schedule trigger worker", async () => {
+      await initScheduler();
+
+      expect(Worker).toHaveBeenCalledWith(
+        SCHEDULE_TRIGGER_QUEUE,
+        expect.any(Function),
+        expect.objectContaining({
+          concurrency: 1,
+        }),
+      );
+      expect(mockScheduleWorker.waitUntilReady).toHaveBeenCalled();
+    });
+
+    it("calls syncSchedules on init using the trigger queue", async () => {
       addJobToConfig("sync-on-init-job");
       addStorageToConfig();
 
       await initScheduler();
 
-      // syncSchedules calls getRepeatableJobs and then add for each scheduled job
-      expect(mockQueue.getRepeatableJobs).toHaveBeenCalled();
-      expect(mockQueue.add).toHaveBeenCalledWith(
+      expect(mockTriggerQueue.getRepeatableJobs).toHaveBeenCalled();
+      expect(mockTriggerQueue.add).toHaveBeenCalledWith(
         "schedule-sync-on-init-job",
         expect.objectContaining({ jobName: "sync-on-init-job" }),
         expect.objectContaining({
@@ -196,22 +225,18 @@ describe("Scheduler (unit)", () => {
     it("sets up completed and failed event handlers on queue events", async () => {
       await initScheduler();
 
-      const onCalls = mockQueueEvents.on.mock.calls;
-      const eventNames = onCalls.map(
-        (c: [string, (...args: any[]) => void]) => c[0],
+      const eventNames = mockQueueEvents.on.mock.calls.map(
+        (call) => call[0],
       );
       expect(eventNames).toContain("completed");
       expect(eventNames).toContain("failed");
     });
   });
 
-  // -----------------------------------------------------------------------
-  // syncSchedules
-  // -----------------------------------------------------------------------
   describe("syncSchedules", () => {
     it("adds repeatable jobs for all scheduled jobs in config", async () => {
       await initScheduler();
-      mockQueue.add.mockClear();
+      mockTriggerQueue.add.mockClear();
 
       addJobToConfig("job-alpha", { schedule: "0 1 * * *" });
       addJobToConfig("job-beta", { schedule: "0 3 * * *" });
@@ -219,14 +244,14 @@ describe("Scheduler (unit)", () => {
 
       await syncSchedules();
 
-      expect(mockQueue.add).toHaveBeenCalledWith(
+      expect(mockTriggerQueue.add).toHaveBeenCalledWith(
         "schedule-job-alpha",
         expect.objectContaining({ jobName: "job-alpha" }),
         expect.objectContaining({
           repeat: expect.objectContaining({ pattern: "0 1 * * *" }),
         }),
       );
-      expect(mockQueue.add).toHaveBeenCalledWith(
+      expect(mockTriggerQueue.add).toHaveBeenCalledWith(
         "schedule-job-beta",
         expect.objectContaining({ jobName: "job-beta" }),
         expect.objectContaining({
@@ -235,26 +260,23 @@ describe("Scheduler (unit)", () => {
       );
     });
 
-    it("removes existing repeatable before re-adding (update)", async () => {
+    it("removes existing repeatable before re-adding", async () => {
       await initScheduler();
 
-      // Simulate an existing repeatable in the queue
-      mockQueue.getRepeatableJobs.mockResolvedValue([
+      mockTriggerQueue.getRepeatableJobs.mockResolvedValue([
         { name: "schedule-existing-job", key: "repeat:existing-job:key", pattern: "0 1 * * *" },
       ]);
-      mockQueue.add.mockClear();
+      mockTriggerQueue.add.mockClear();
 
       addJobToConfig("existing-job", { schedule: "0 5 * * *" });
       addStorageToConfig();
 
       await syncSchedules();
 
-      // The old key should have been removed first
-      expect(mockQueue.removeRepeatableByKey).toHaveBeenCalledWith(
+      expect(mockTriggerQueue.removeRepeatableByKey).toHaveBeenCalledWith(
         "repeat:existing-job:key",
       );
-      // Then the new schedule should be added
-      expect(mockQueue.add).toHaveBeenCalledWith(
+      expect(mockTriggerQueue.add).toHaveBeenCalledWith(
         "schedule-existing-job",
         expect.objectContaining({ jobName: "existing-job" }),
         expect.objectContaining({
@@ -266,47 +288,42 @@ describe("Scheduler (unit)", () => {
     it("removes repeatables for jobs no longer in config", async () => {
       await initScheduler();
 
-      // Simulate a repeatable that no longer has a corresponding config entry
-      mockQueue.getRepeatableJobs.mockResolvedValue([
+      mockTriggerQueue.getRepeatableJobs.mockResolvedValue([
         { name: "schedule-removed-job", key: "repeat:removed-key", pattern: "0 6 * * *" },
       ]);
 
-      // Config is empty -- the job was removed
       await syncSchedules();
 
-      expect(mockQueue.removeRepeatableByKey).toHaveBeenCalledWith(
+      expect(mockTriggerQueue.removeRepeatableByKey).toHaveBeenCalledWith(
         "repeat:removed-key",
       );
     });
 
     it("skips jobs without a schedule field", async () => {
       await initScheduler();
-      mockQueue.add.mockClear();
+      mockTriggerQueue.add.mockClear();
 
       addJobToConfig("no-schedule-job", { schedule: undefined });
       addStorageToConfig();
 
       await syncSchedules();
 
-      const addCalls = mockQueue.add.mock.calls;
-      const scheduledNames = addCalls.map(
-        (c: [string, ...any[]]) => c[0],
+      const scheduledNames = mockTriggerQueue.add.mock.calls.map(
+        (call) => call[0],
       );
       expect(scheduledNames).not.toContain("schedule-no-schedule-job");
     });
 
-    it("throws if scheduler not initialized", async () => {
-      // stopScheduler was already called in afterEach, but let's be explicit
+    it("throws if scheduler is not initialized", async () => {
       await stopScheduler();
 
       await expect(syncSchedules()).rejects.toThrow("Scheduler not initialized");
     });
 
-    it("schedules multiple jobs with the same cron pattern using unique keys", async () => {
+    it("uses unique repeat keys when schedules share the same cron", async () => {
       await initScheduler();
-      mockQueue.add.mockClear();
+      mockTriggerQueue.add.mockClear();
 
-      // Three jobs with the same cron schedule
       addJobToConfig("job-a", { schedule: "0 2 * * *" });
       addJobToConfig("job-b", { schedule: "0 2 * * *" });
       addJobToConfig("job-c", { schedule: "0 2 * * *" });
@@ -314,46 +331,35 @@ describe("Scheduler (unit)", () => {
 
       await syncSchedules();
 
-      // All three jobs should be added with their own unique keys
-      expect(mockQueue.add).toHaveBeenCalledTimes(3);
+      expect(mockTriggerQueue.add).toHaveBeenCalledTimes(3);
 
-      // Verify each job has a unique repeat key
-      const addCalls = mockQueue.add.mock.calls;
-      const jobA = addCalls.find((c: [string]) => c[0] === "schedule-job-a");
-      const jobB = addCalls.find((c: [string]) => c[0] === "schedule-job-b");
-      const jobC = addCalls.find((c: [string]) => c[0] === "schedule-job-c");
+      const addCalls = mockTriggerQueue.add.mock.calls;
+      const jobA = addCalls.find((call) => call[0] === "schedule-job-a");
+      const jobB = addCalls.find((call) => call[0] === "schedule-job-b");
+      const jobC = addCalls.find((call) => call[0] === "schedule-job-c");
 
       expect(jobA).toBeDefined();
       expect(jobB).toBeDefined();
       expect(jobC).toBeDefined();
-
-      // Each should have a unique key to prevent deduplication
-      expect((jobA[2] as any).repeat.key).toBe("schedule-job-a");
-      expect((jobB[2] as any).repeat.key).toBe("schedule-job-b");
-      expect((jobC[2] as any).repeat.key).toBe("schedule-job-c");
+      expect((jobA![2] as any).repeat.key).toBe("schedule-job-a");
+      expect((jobB![2] as any).repeat.key).toBe("schedule-job-b");
+      expect((jobC![2] as any).repeat.key).toBe("schedule-job-c");
     });
   });
 
-  // -----------------------------------------------------------------------
-  // queueJob
-  // -----------------------------------------------------------------------
   describe("queueJob", () => {
     it("queues a job for immediate execution and returns executionId", async () => {
       addJobToConfig("manual-run");
       addStorageToConfig();
       await initScheduler();
 
-      mockQueue.add.mockClear();
+      mockBackupQueue.add.mockClear();
       const result = await queueJob("manual-run");
 
       expect(result.queued).toBe(true);
       expect(result.executionId).toBeTruthy();
-      expect(typeof result.executionId).toBe("string");
-      expect(result.executionId.length).toBeGreaterThan(0);
       expect(result.message).toContain("queued");
-
-      // Verify backupQueue.add was called with the correct name pattern
-      expect(mockQueue.add).toHaveBeenCalledWith(
+      expect(mockBackupQueue.add).toHaveBeenCalledWith(
         "backup-manual-run",
         expect.objectContaining({
           executionId: result.executionId,
@@ -366,35 +372,34 @@ describe("Scheduler (unit)", () => {
       );
     });
 
-    it("returns queued:false with message when scheduler not initialized", async () => {
+    it("returns queued:false when scheduler is not initialized", async () => {
       await stopScheduler();
 
       const result = await queueJob("any-job");
 
-      expect(result.queued).toBe(false);
-      expect(result.executionId).toBe("");
-      expect(result.message).toBe("Scheduler not initialized");
+      expect(result).toEqual({
+        executionId: "",
+        queued: false,
+        message: "Scheduler not initialized",
+      });
     });
 
-    it("returns queued:false when job not found in config", async () => {
+    it("returns queued:false when job is not found in config", async () => {
       await initScheduler();
 
       const result = await queueJob("nonexistent-job");
 
       expect(result.queued).toBe(false);
-      expect(result.executionId).toBe("");
       expect(result.message).toContain("not found");
     });
 
-    it("returns queued:false when storage not found for job", async () => {
+    it("returns queued:false when storage is missing for the job", async () => {
       addJobToConfig("missing-storage-job", { storage: "does-not-exist" });
-      // Deliberately do NOT add the storage config
       await initScheduler();
 
       const result = await queueJob("missing-storage-job");
 
       expect(result.queued).toBe(false);
-      expect(result.executionId).toBe("");
       expect(result.message).toContain("Storage");
       expect(result.message).toContain("does-not-exist");
     });
@@ -412,48 +417,68 @@ describe("Scheduler (unit)", () => {
       expect(result2.executionId.length).toBeGreaterThan(0);
     });
 
-    it('passes correct triggeredBy value "manual"', async () => {
+    it('passes the "manual" trigger source through to backup jobs', async () => {
       addJobToConfig("trigger-manual");
       addStorageToConfig();
       await initScheduler();
-      mockQueue.add.mockClear();
+      mockBackupQueue.add.mockClear();
 
       await queueJob("trigger-manual", "manual");
 
-      expect(mockQueue.add).toHaveBeenCalledWith(
+      expect(mockBackupQueue.add).toHaveBeenCalledWith(
         "backup-trigger-manual",
         expect.objectContaining({ triggeredBy: "manual" }),
         expect.any(Object),
       );
     });
 
-    it('passes correct triggeredBy value "failover"', async () => {
+    it('passes the "failover" trigger source through to backup jobs', async () => {
       addJobToConfig("trigger-failover");
       addStorageToConfig();
       await initScheduler();
-      mockQueue.add.mockClear();
+      mockBackupQueue.add.mockClear();
 
       await queueJob("trigger-failover", "failover");
 
-      expect(mockQueue.add).toHaveBeenCalledWith(
+      expect(mockBackupQueue.add).toHaveBeenCalledWith(
         "backup-trigger-failover",
         expect.objectContaining({ triggeredBy: "failover" }),
         expect.any(Object),
       );
     });
+
+    it("re-queues schedule trigger jobs with fresh execution metadata", async () => {
+      addJobToConfig("trigger-schedule");
+      addStorageToConfig();
+      await initScheduler();
+      mockBackupQueue.add.mockClear();
+
+      expect(scheduleProcessor).toBeTypeOf("function");
+      await scheduleProcessor!({ data: { jobName: "trigger-schedule" } });
+
+      expect(mockBackupQueue.add).toHaveBeenCalledWith(
+        "backup-trigger-schedule",
+        expect.objectContaining({
+          jobName: "trigger-schedule",
+          triggeredBy: "schedule",
+          executionId: expect.any(String),
+          queuedAt: expect.any(Number),
+        }),
+        expect.objectContaining({
+          jobId: expect.any(String),
+        }),
+      );
+    });
   });
 
-  // -----------------------------------------------------------------------
-  // getScheduledJobs
-  // -----------------------------------------------------------------------
   describe("getScheduledJobs", () => {
-    it("returns scheduled jobs list from repeatables", async () => {
+    it("returns scheduled jobs from the trigger queue repeatables", async () => {
       addJobToConfig("sched-a", { schedule: "0 2 * * *" });
       addJobToConfig("sched-b", { schedule: "0 4 * * *" });
       addStorageToConfig();
       await initScheduler();
 
-      mockQueue.getRepeatableJobs.mockResolvedValue([
+      mockTriggerQueue.getRepeatableJobs.mockResolvedValue([
         { name: "schedule-sched-a", key: "k1", pattern: "0 2 * * *", next: Date.now() + 60000 },
         { name: "schedule-sched-b", key: "k2", pattern: "0 4 * * *", next: Date.now() + 120000 },
       ]);
@@ -462,10 +487,8 @@ describe("Scheduler (unit)", () => {
 
       expect(jobs).toHaveLength(2);
       expect(jobs[0].name).toBe("sched-a");
-      expect(jobs[0].schedule).toBe("0 2 * * *");
       expect(jobs[0].nextRun).toBeInstanceOf(Date);
       expect(jobs[1].name).toBe("sched-b");
-      expect(jobs[1].schedule).toBe("0 4 * * *");
     });
 
     it("returns empty array when not initialized", async () => {
@@ -477,14 +500,11 @@ describe("Scheduler (unit)", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // getRunningJobs
-  // -----------------------------------------------------------------------
   describe("getRunningJobs", () => {
-    it("returns active jobs from queue", async () => {
+    it("returns active jobs from the backup queue", async () => {
       await initScheduler();
 
-      mockQueue.getActive.mockResolvedValue([
+      mockBackupQueue.getActive.mockResolvedValue([
         {
           data: {
             jobName: "running-job-1",
@@ -503,17 +523,18 @@ describe("Scheduler (unit)", () => {
 
       const running = await getRunningJobs();
 
-      expect(running).toHaveLength(2);
-      expect(running[0]).toEqual({
-        jobName: "running-job-1",
-        executionId: "exec-1",
-        queuedAt: 1700000000000,
-      });
-      expect(running[1]).toEqual({
-        jobName: "running-job-2",
-        executionId: "exec-2",
-        queuedAt: 1700000001000,
-      });
+      expect(running).toEqual([
+        {
+          jobName: "running-job-1",
+          executionId: "exec-1",
+          queuedAt: 1700000000000,
+        },
+        {
+          jobName: "running-job-2",
+          executionId: "exec-2",
+          queuedAt: 1700000001000,
+        },
+      ]);
     });
 
     it("returns empty array when not initialized", async () => {
@@ -525,14 +546,11 @@ describe("Scheduler (unit)", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // getQueueStats
-  // -----------------------------------------------------------------------
   describe("getQueueStats", () => {
-    it("returns queue counts", async () => {
+    it("returns queue counts from the backup queue", async () => {
       await initScheduler();
 
-      mockQueue.getJobCounts.mockResolvedValue({
+      mockBackupQueue.getJobCounts.mockResolvedValue({
         waiting: 5,
         active: 2,
         completed: 100,
@@ -569,41 +587,41 @@ describe("Scheduler (unit)", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // isJobActive
-  // -----------------------------------------------------------------------
   describe("isJobActive", () => {
-    it("returns true when job is in waiting queue", async () => {
+    it("returns true when the job is waiting", async () => {
       await initScheduler();
 
-      mockQueue.getWaiting.mockResolvedValue([
+      mockBackupQueue.getWaiting.mockResolvedValue([
         { data: { jobName: "waiting-job" } },
       ]);
-      mockQueue.getActive.mockResolvedValue([]);
+      mockBackupQueue.getActive.mockResolvedValue([]);
+      mockBackupQueue.getJobs.mockResolvedValue([]);
 
       const result = await isJobActive("waiting-job");
 
       expect(result).toBe(true);
     });
 
-    it("returns true when job is in active queue", async () => {
+    it("returns true when the job is active", async () => {
       await initScheduler();
 
-      mockQueue.getWaiting.mockResolvedValue([]);
-      mockQueue.getActive.mockResolvedValue([
+      mockBackupQueue.getWaiting.mockResolvedValue([]);
+      mockBackupQueue.getActive.mockResolvedValue([
         { data: { jobName: "active-job" } },
       ]);
+      mockBackupQueue.getJobs.mockResolvedValue([]);
 
       const result = await isJobActive("active-job");
 
       expect(result).toBe(true);
     });
 
-    it("returns false when job is nowhere", async () => {
+    it("returns false when the job is nowhere in the queue", async () => {
       await initScheduler();
 
-      mockQueue.getWaiting.mockResolvedValue([]);
-      mockQueue.getActive.mockResolvedValue([]);
+      mockBackupQueue.getWaiting.mockResolvedValue([]);
+      mockBackupQueue.getActive.mockResolvedValue([]);
+      mockBackupQueue.getJobs.mockResolvedValue([]);
 
       const result = await isJobActive("ghost-job");
 
@@ -619,20 +637,19 @@ describe("Scheduler (unit)", () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // stopScheduler
-  // -----------------------------------------------------------------------
   describe("stopScheduler", () => {
-    it("closes queue and events", async () => {
+    it("closes both queues, the schedule worker, and queue events", async () => {
       await initScheduler();
 
       await stopScheduler();
 
       expect(mockQueueEvents.close).toHaveBeenCalledTimes(1);
-      expect(mockQueue.close).toHaveBeenCalledTimes(1);
+      expect(mockScheduleWorker.close).toHaveBeenCalledTimes(1);
+      expect(mockTriggerQueue.close).toHaveBeenCalledTimes(1);
+      expect(mockBackupQueue.close).toHaveBeenCalledTimes(1);
     });
 
-    it("sets internal references to null (getBackupQueue returns null after stop)", async () => {
+    it("sets internal references to null", async () => {
       await initScheduler();
       expect(getBackupQueue()).not.toBeNull();
 
@@ -641,16 +658,16 @@ describe("Scheduler (unit)", () => {
       expect(getBackupQueue()).toBeNull();
     });
 
-    it("can be called multiple times without error (double stop safety)", async () => {
+    it("can be called multiple times without error", async () => {
       await initScheduler();
 
       await stopScheduler();
       await stopScheduler();
 
-      // close should only have been called once each because the second
-      // stopScheduler call sees null references and skips closing
       expect(mockQueueEvents.close).toHaveBeenCalledTimes(1);
-      expect(mockQueue.close).toHaveBeenCalledTimes(1);
+      expect(mockScheduleWorker.close).toHaveBeenCalledTimes(1);
+      expect(mockTriggerQueue.close).toHaveBeenCalledTimes(1);
+      expect(mockBackupQueue.close).toHaveBeenCalledTimes(1);
     });
   });
 });

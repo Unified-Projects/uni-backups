@@ -64,6 +64,8 @@ const tagsArb = fc.array(fc.stringMatching(/^[a-zA-Z0-9._-]+$/), {
   maxLength: 20,
 });
 
+const repoNameArb = fc.stringMatching(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+
 const excludePatternsArb = fc.array(
   fc.stringMatching(/^[\*\?]?[a-zA-Z0-9._\/\-\[\]]+[\*\?]?$/),
   { minLength: 0, maxLength: 10 }
@@ -372,7 +374,7 @@ describe("Job Config Property-Based Tests", () => {
           retentionArbOption,
           tagsArbOption,
           excludePatternsArbOption,
-          fc.option(fc.stringMatching(/^[a-zA-Z0-9_-]+$/), { nil: undefined }),
+          fc.option(repoNameArb, { nil: undefined }),
           fc.option(fc.integer({min: 1, max: 100}), { nil: undefined }),
           (jobType, source, storage, schedule, retention, tags, exclude, repo, priority) => {
             const config: Record<string, unknown> = {

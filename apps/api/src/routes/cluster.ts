@@ -82,19 +82,27 @@ cluster.get("/metrics", async (c) => {
     effectiveStatus: healthyWorkerIds.has(w.id) ? w.status : "offline",
   }));
 
+  const workersByStatus = workersWithEffectiveStatus.reduce(
+    (totals, worker) => {
+      totals[worker.effectiveStatus] += 1;
+      return totals;
+    },
+    {
+      healthy: 0,
+      starting: 0,
+      degraded: 0,
+      stopping: 0,
+      offline: 0,
+    } as Record<"healthy" | "starting" | "degraded" | "stopping" | "offline", number>
+  );
+
   return c.json({
     timestamp: new Date().toISOString(),
     totalWorkers: allWorkers.length,
     workers: {
       total: allWorkers.length,
       healthy: healthyWorkerIds.size,
-      byStatus: {
-        healthy: allWorkers.filter((w) => healthyWorkerIds.has(w.id) && w.status === "healthy").length,
-        starting: allWorkers.filter((w) => w.status === "starting").length,
-        degraded: allWorkers.filter((w) => w.status === "degraded").length,
-        stopping: allWorkers.filter((w) => w.status === "stopping").length,
-        offline: allWorkers.filter((w) => w.status === "offline").length,
-      },
+      byStatus: workersByStatus,
       details: workersWithEffectiveStatus.map((w) => ({
         id: w.id,
         name: w.name,

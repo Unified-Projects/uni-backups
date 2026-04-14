@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { createReadStream, existsSync, mkdirSync, statSync, unlinkSync } from "fs";
+import { createReadStream, existsSync, lstatSync, mkdirSync, statSync, unlinkSync } from "fs";
 import { Readable } from "stream";
-import { join } from "path";
+import { isAbsolute, join, relative, resolve } from "path";
 import { spawn } from "child_process";
 import { getStorage, getConfig, getTempDir } from "@uni-backups/shared/config";
 import * as restic from "../services/restic";
@@ -24,9 +24,110 @@ interface RestoreOperation {
 }
 
 const restoreOperations = new Map<string, RestoreOperation>();
+const restoreCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const TERMINAL_OPERATION_TTL_MS = 60 * 60 * 1000;
+const DOWNLOAD_COMPLETION_TTL_MS = 5 * 60 * 1000;
+
+function getRestoreRoot(): string {
+  return resolve(getTempDir(), "restores");
+}
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function isWithinRoot(rootPath: string, candidatePath: string): boolean {
+  const relativePath = relative(rootPath, candidatePath);
+  return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+}
+
+function validatePathRestoreTarget(rawTarget: string): string {
+  const restoreRoot = getRestoreRoot();
+  const trimmedTarget = rawTarget.trim();
+
+  if (!trimmedTarget) {
+    throw new Error("Target path is required for path restore method");
+  }
+
+  if (existsSync(restoreRoot) && lstatSync(restoreRoot).isSymbolicLink()) {
+    throw new Error(`Restore root "${restoreRoot}" cannot be a symbolic link`);
+  }
+
+  const resolvedTarget = isAbsolute(trimmedTarget)
+    ? resolve(trimmedTarget)
+    : resolve(restoreRoot, trimmedTarget);
+
+  if (!isAbsolute(trimmedTarget) && !isWithinRoot(restoreRoot, resolvedTarget)) {
+    throw new Error(
+      `Target path must stay within the restore root "${restoreRoot}"`
+    );
+  }
+
+  const parentRoot = isAbsolute(trimmedTarget) ? resolve("/") : restoreRoot;
+  const relativeSegments = relative(parentRoot, resolvedTarget)
+    .split(/[\\/]+/)
+    .filter(Boolean);
+
+  let currentPath = parentRoot;
+  for (const segment of relativeSegments) {
+    currentPath = join(currentPath, segment);
+    if (!existsSync(currentPath)) {
+      continue;
+    }
+
+    const stats = lstatSync(currentPath);
+    if (stats.isSymbolicLink()) {
+      throw new Error(
+        `Target path contains a symbolic link and cannot be used outside the restore root "${restoreRoot}"`
+      );
+    }
+  }
+
+  return resolvedTarget;
+}
+
+function clearRestoreCleanup(id: string): void {
+  const timer = restoreCleanupTimers.get(id);
+  if (timer) {
+    clearTimeout(timer);
+    restoreCleanupTimers.delete(id);
+  }
+}
+
+function deleteRestoreOperation(id: string): void {
+  clearRestoreCleanup(id);
+
+  const operation = restoreOperations.get(id);
+  if (operation?.archivePath && existsSync(operation.archivePath)) {
+    try {
+      unlinkSync(operation.archivePath);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
+  restoreOperations.delete(id);
+}
+
+function scheduleRestoreCleanup(id: string, ttlMs: number): void {
+  clearRestoreCleanup(id);
+
+  const timer = setTimeout(() => {
+    deleteRestoreOperation(id);
+  }, ttlMs);
+
+  restoreCleanupTimers.set(id, timer);
+}
+
+function markRestoreOperationTerminal(
+  operation: RestoreOperation,
+  status: "completed" | "failed",
+  message: string
+): void {
+  operation.status = status;
+  operation.message = message;
+  operation.endTime = new Date();
+  scheduleRestoreCleanup(operation.id, TERMINAL_OPERATION_TTL_MS);
 }
 
 async function createArchive(sourceDir: string, archivePath: string): Promise<boolean> {
@@ -106,6 +207,18 @@ restore.post("/", async (c) => {
     return c.json({ error: "Restic password not configured" }, 500);
   }
 
+  let validatedTarget: string | undefined;
+  if (method === "path") {
+    try {
+      validatedTarget = validatePathRestoreTarget(target!);
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : "Invalid target path" },
+        400
+      );
+    }
+  }
+
   const id = generateId();
   const operation: RestoreOperation = {
     id,
@@ -114,7 +227,7 @@ restore.post("/", async (c) => {
     snapshotId,
     paths: paths || [],
     method,
-    target,
+    target: validatedTarget,
     status: "pending",
     startTime: new Date(),
   };
@@ -132,7 +245,8 @@ restore.post("/", async (c) => {
         restoreTarget = join(tempDir, `restore-${id}`);
         mkdirSync(restoreTarget, { recursive: true });
       } else {
-        restoreTarget = target!;
+        restoreTarget = validatedTarget!;
+        mkdirSync(restoreTarget, { recursive: true });
       }
 
       const result = await restic.restore(
@@ -147,9 +261,7 @@ restore.post("/", async (c) => {
       );
 
       if (!result.success) {
-        operation.status = "failed";
-        operation.message = result.message;
-        operation.endTime = new Date();
+        markRestoreOperationTerminal(operation, "failed", result.message);
         return;
       }
 
@@ -158,9 +270,7 @@ restore.post("/", async (c) => {
         const archiveSuccess = await createArchive(restoreTarget, archivePath);
 
         if (!archiveSuccess) {
-          operation.status = "failed";
-          operation.message = "Failed to create archive";
-          operation.endTime = new Date();
+          markRestoreOperationTerminal(operation, "failed", "Failed to create archive");
           return;
         }
 
@@ -173,13 +283,13 @@ restore.post("/", async (c) => {
         }
       }
 
-      operation.status = "completed";
-      operation.message = result.message;
-      operation.endTime = new Date();
+      markRestoreOperationTerminal(operation, "completed", result.message);
     } catch (error) {
-      operation.status = "failed";
-      operation.message = error instanceof Error ? error.message : "Unknown error";
-      operation.endTime = new Date();
+      markRestoreOperationTerminal(
+        operation,
+        "failed",
+        error instanceof Error ? error.message : "Unknown error"
+      );
     }
   })();
 
@@ -244,17 +354,8 @@ restore.get("/:id/download", async (c) => {
   c.header("Content-Disposition", `attachment; filename="${filename}"`);
   c.header("Content-Length", stat.size.toString());
 
-  // Clean up archive after a delay to allow the download to complete
-  setTimeout(() => {
-    try {
-      if (operation.archivePath && existsSync(operation.archivePath)) {
-        unlinkSync(operation.archivePath);
-      }
-      restoreOperations.delete(id);
-    } catch {
-      // Ignore cleanup errors
-    }
-  }, 300000); // 5 minutes to allow large file downloads to complete
+  // Shorten retention once the client starts downloading the archive.
+  scheduleRestoreCleanup(id, DOWNLOAD_COMPLETION_TTL_MS);
 
   return c.body(webStream);
 });

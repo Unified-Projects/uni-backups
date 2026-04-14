@@ -55,6 +55,8 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - UNI_BACKUPS_RESTIC_PASSWORD=${UNI_BACKUPS_RESTIC_PASSWORD}
+      - UNI_BACKUPS_API_TOKEN=${UNI_BACKUPS_API_TOKEN}
+      - UNI_BACKUPS_API_TOKEN_FILE=${UNI_BACKUPS_API_TOKEN_FILE}
       - UNI_BACKUPS_CONFIG_FILE=/app/config/backups.yml
     volumes:
       - ./config:/app/config:ro

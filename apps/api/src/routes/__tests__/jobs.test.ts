@@ -3,32 +3,56 @@ import { Hono } from "hono";
 import jobs from "../jobs";
 
 // Mock dependencies
-vi.mock("@uni-backups/shared/config", () => ({
-  getAllJobs: vi.fn(),
-  getJob: vi.fn(),
-  getStorage: vi.fn(),
-  getConfig: vi.fn(),
-  addJob: vi.fn(),
-  updateJob: vi.fn(),
-  removeJob: vi.fn(),
-  isConfigDirty: vi.fn(),
-  saveConfig: vi.fn(),
-}));
+vi.mock("@uni-backups/shared/config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@uni-backups/shared/config")>();
+  return {
+    ...actual,
+    getAllJobs: vi.fn(),
+    getJob: vi.fn(),
+    getStorage: vi.fn(),
+    getConfig: vi.fn(),
+    addJob: vi.fn(),
+    updateJob: vi.fn(),
+    removeJob: vi.fn(),
+    isConfigDirty: vi.fn(),
+    saveConfig: vi.fn(),
+  };
+});
 
 vi.mock("../../services/scheduler", () => ({
+  initScheduler: vi.fn(),
   queueJob: vi.fn(),
   getRecentRuns: vi.fn(),
   isJobActive: vi.fn(),
   getRunningJobs: vi.fn(),
   getQueueStats: vi.fn(),
+  syncSchedules: vi.fn(),
 }));
 
 vi.mock("../../services/restic", () => ({
   listSnapshots: vi.fn(),
 }));
 
-import { getAllJobs, getJob, getStorage, getConfig, isConfigDirty, saveConfig } from "@uni-backups/shared/config";
-import { queueJob, getRecentRuns, isJobActive, getRunningJobs, getQueueStats } from "../../services/scheduler";
+import {
+  addJob,
+  getAllJobs,
+  getJob,
+  getStorage,
+  getConfig,
+  isConfigDirty,
+  removeJob,
+  saveConfig,
+  updateJob,
+} from "@uni-backups/shared/config";
+import {
+  initScheduler,
+  queueJob,
+  getRecentRuns,
+  isJobActive,
+  getRunningJobs,
+  getQueueStats,
+  syncSchedules,
+} from "../../services/scheduler";
 import * as restic from "../../services/restic";
 
 describe("Jobs API Routes", () => {
@@ -242,6 +266,198 @@ describe("Jobs API Routes", () => {
 
       expect(res.status).toBe(500);
       expect(json.error).toBe("Queue is full");
+    });
+  });
+
+  describe("job configuration mutations", () => {
+    it("rejects invalid JSON on create", async () => {
+      const res = await app.request("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{",
+      });
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.error).toBe("Invalid JSON body");
+    });
+
+    it("creates a new job and syncs schedules", async () => {
+      vi.mocked(getJob).mockReturnValue(undefined);
+      vi.mocked(getStorage).mockReturnValue({ type: "local", path: "/backups" });
+      vi.mocked(syncSchedules).mockResolvedValue(undefined);
+
+      const res = await app.request("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "nightly",
+          type: "folder",
+          storage: "local",
+          source: "/data",
+          schedule: "0 2 * * *",
+        }),
+      });
+      const json = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(vi.mocked(addJob)).toHaveBeenCalledWith(
+        "nightly",
+        expect.objectContaining({
+          type: "folder",
+          storage: "local",
+          source: "/data",
+        })
+      );
+      expect(syncSchedules).toHaveBeenCalled();
+      expect(json.status).toBe("created");
+    });
+
+    it("retries scheduler initialization when create hits an uninitialized scheduler", async () => {
+      vi.mocked(getJob).mockReturnValue(undefined);
+      vi.mocked(getStorage).mockReturnValue({ type: "local", path: "/backups" });
+      vi.mocked(syncSchedules)
+        .mockRejectedValueOnce(new Error("Scheduler not initialized"))
+        .mockResolvedValueOnce(undefined);
+      vi.mocked(initScheduler).mockResolvedValue(undefined);
+
+      const res = await app.request("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "nightly",
+          type: "folder",
+          storage: "local",
+          source: "/data",
+        }),
+      });
+      const json = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(initScheduler).toHaveBeenCalledTimes(1);
+      expect(syncSchedules).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(removeJob)).not.toHaveBeenCalled();
+      expect(json.status).toBe("created");
+    });
+
+    it("updates an existing job via POST and rolls back when schedule sync fails", async () => {
+      const existingJob = {
+        type: "folder" as const,
+        storage: "local",
+        source: "/old",
+        schedule: "0 1 * * *",
+      };
+
+      vi.mocked(getJob).mockReturnValue(existingJob);
+      vi.mocked(getStorage).mockReturnValue({ type: "local", path: "/backups" });
+      vi.mocked(syncSchedules).mockRejectedValue(new Error("sync failed"));
+
+      const res = await app.request("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "nightly",
+          type: "folder",
+          storage: "local",
+          source: "/new",
+        }),
+      });
+      const json = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(vi.mocked(updateJob)).toHaveBeenNthCalledWith(
+        1,
+        "nightly",
+        expect.objectContaining({ source: "/new" })
+      );
+      expect(vi.mocked(updateJob)).toHaveBeenNthCalledWith(2, "nightly", existingJob);
+      expect(json.error).toBe("sync failed");
+    });
+
+    it("retries scheduler initialization when updating via POST hits an uninitialized scheduler", async () => {
+      const existingJob = {
+        type: "folder" as const,
+        storage: "local",
+        source: "/old",
+        schedule: "0 1 * * *",
+      };
+
+      vi.mocked(getJob).mockReturnValue(existingJob);
+      vi.mocked(getStorage).mockReturnValue({ type: "local", path: "/backups" });
+      vi.mocked(syncSchedules)
+        .mockRejectedValueOnce(new Error("Scheduler not initialized"))
+        .mockResolvedValueOnce(undefined);
+      vi.mocked(initScheduler).mockResolvedValue(undefined);
+
+      const res = await app.request("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "nightly",
+          type: "folder",
+          storage: "local",
+          source: "/new",
+        }),
+      });
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(initScheduler).toHaveBeenCalledTimes(1);
+      expect(syncSchedules).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(updateJob)).toHaveBeenCalledTimes(1);
+      expect(json.status).toBe("updated");
+    });
+
+    it("rejects schema-invalid create payloads", async () => {
+      vi.mocked(getStorage).mockReturnValue({ type: "local", path: "/backups" });
+
+      const res = await app.request("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "broken-job",
+          type: "folder",
+          storage: "local",
+        }),
+      });
+      const json = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(json.field).toBe("source");
+    });
+
+    it("rejects deleting an active job", async () => {
+      vi.mocked(getJob).mockReturnValue({
+        type: "folder",
+        storage: "local",
+        source: "/data",
+      });
+      vi.mocked(isJobActive).mockResolvedValue(true);
+
+      const res = await app.request("/jobs/nightly", { method: "DELETE" });
+      const json = await res.json();
+
+      expect(res.status).toBe(409);
+      expect(json.error).toContain("Cannot delete running job");
+    });
+
+    it("rolls back delete when schedule sync fails", async () => {
+      const existingJob = {
+        type: "folder" as const,
+        storage: "local",
+        source: "/data",
+      };
+      vi.mocked(getJob).mockReturnValue(existingJob);
+      vi.mocked(isJobActive).mockResolvedValue(false);
+      vi.mocked(syncSchedules).mockRejectedValue(new Error("sync failed"));
+
+      const res = await app.request("/jobs/nightly", { method: "DELETE" });
+      const json = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(vi.mocked(removeJob)).toHaveBeenCalledWith("nightly");
+      expect(vi.mocked(updateJob)).toHaveBeenCalledWith("nightly", existingJob);
+      expect(json.error).toBe("sync failed");
     });
   });
 

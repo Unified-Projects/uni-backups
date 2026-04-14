@@ -32,13 +32,13 @@ interface WorkerGroup {
 }
 
 async function getWorkers(): Promise<{ workers: Worker[] }> {
-  const res = await fetch(`${API_URL}/api/workers`);
+  const res = await fetch(`${API_URL}/api/workers`, { credentials: "include" });
   if (!res.ok) throw new Error("Failed to fetch workers");
   return res.json();
 }
 
 async function getWorkerGroups(): Promise<{ groups: WorkerGroup[] }> {
-  const res = await fetch(`${API_URL}/api/workers/groups`);
+  const res = await fetch(`${API_URL}/api/workers/groups`, { credentials: "include" });
   if (!res.ok) throw new Error("Failed to fetch worker groups");
   return res.json();
 }

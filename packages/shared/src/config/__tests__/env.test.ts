@@ -144,6 +144,18 @@ describe("env module", () => {
 
       expect(env.UNI_BACKUPS_RESTIC_PASSWORD).toBe("restic-password-from-file");
     });
+
+    it("resolves API token from UNI_BACKUPS_API_TOKEN_FILE", async () => {
+      process.env.UNI_BACKUPS_API_TOKEN_FILE = "/run/secrets/api-token";
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue("api-token-from-file\n");
+
+      const { getApiToken, resetEnvCache } = await import("../env");
+      resetEnvCache();
+
+      expect(getApiToken()).toBe("api-token-from-file");
+      expect(mockReadFileSync).toHaveBeenCalledWith("/run/secrets/api-token", "utf-8");
+    });
   });
 
   describe("resetEnvCache", () => {
