@@ -42,8 +42,8 @@
     "mysql2": "^3.18.0",
     "pg": "^8.18.0",
     "turbo": "^2.8.10",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.4",
     "vite-tsconfig-paths": "^6.1.1"
   },
   "workspaces": [
