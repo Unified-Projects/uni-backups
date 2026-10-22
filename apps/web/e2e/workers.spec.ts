@@ -13,7 +13,7 @@ test.describe("Workers Page", () => {
       'a[href*="worker"], [data-testid="workers-link"]'
     );
 
-    await expect(workersLink.first()).toBeVisible({ message: "Workers navigation link must be present in the sidebar or navigation" });
+    await expect(workersLink.first(), "Workers navigation link must be present in the sidebar or navigation").toBeVisible();
     await workersLink.first().click();
     await page.waitForLoadState("domcontentloaded");
 
@@ -31,7 +31,7 @@ test.describe("Workers Page", () => {
       'a[href*="worker"], [data-testid="workers-link"]'
     );
 
-    await expect(workersLink.first()).toBeVisible({ message: "Workers navigation link must be present" });
+    await expect(workersLink.first(), "Workers navigation link must be present").toBeVisible();
     await workersLink.first().click();
     await page.waitForLoadState("networkidle");
 
@@ -47,14 +47,14 @@ test.describe("Workers Page", () => {
       'a[href*="worker"], [data-testid="workers-link"]'
     );
 
-    await expect(workersLink.first()).toBeVisible({ message: "Workers navigation link must be present" });
+    await expect(workersLink.first(), "Workers navigation link must be present").toBeVisible();
     await workersLink.first().click();
     await page.waitForLoadState("networkidle");
 
     const statusIndicators = page.locator(
       '[data-testid*="status"], .status-healthy, .status-degraded, .health-indicator, [class*="status"]'
     );
-    await expect(statusIndicators.first()).toBeVisible({ message: "Worker health status indicators must be displayed" });
+    await expect(statusIndicators.first(), "Worker health status indicators must be displayed").toBeVisible();
   });
 });
 

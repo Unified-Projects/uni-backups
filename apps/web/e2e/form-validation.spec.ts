@@ -316,7 +316,7 @@ test.describe("Concurrent Form Submission", () => {
     for (const result of results) {
       expect(result.status).toBe("fulfilled");
       if (result.status === "fulfilled") {
-        expect([200, 409]).toContain((result.value as Response).status());
+        expect([200, 409]).toContain(result.value.status());
       }
     }
   });

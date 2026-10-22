@@ -15,16 +15,16 @@ test.describe("Storage Page", () => {
     await page.waitForLoadState("networkidle");
     // The storage list container must be present and contain at least one storage entry
     const storageList = page.locator("[data-testid='storage-list'], .storage-list");
-    await expect(storageList).toBeVisible({ message: "Storage list container must be visible on the storage page" });
+    await expect(storageList, "Storage list container must be visible on the storage page").toBeVisible();
     const storageItems = storageList.locator("[data-testid*='storage-item'], [data-testid*='storage-card'], .storage-item, .storage-card");
-    await expect(storageItems.first()).toBeVisible({ message: "At least one storage backend must be displayed" });
+    await expect(storageItems.first(), "At least one storage backend must be displayed").toBeVisible();
   });
 
   test("displays storage type badges", async ({ page }) => {
     await page.waitForLoadState("networkidle");
     // Storage type badges must be present — every configured backend must show its type
     const typeBadges = page.locator("[data-testid='storage-type'], .storage-type-badge, [class*='type-badge']");
-    await expect(typeBadges.first()).toBeVisible({ message: "Storage type badges must be displayed for configured backends" });
+    await expect(typeBadges.first(), "Storage type badges must be displayed for configured backends").toBeVisible();
     const badgeTexts = await typeBadges.allTextContents();
     for (const text of badgeTexts) {
       expect(["local", "sftp", "s3", "rest"].some(t => text.toLowerCase().includes(t)),
@@ -40,7 +40,7 @@ test.describe("Storage Page", () => {
 
     // Each storage item must have a status indicator
     const statusIndicators = page.locator('[data-testid*="status"], .status-indicator, [class*="status"]');
-    await expect(statusIndicators.first()).toBeVisible({ message: "Storage status indicators must be present" });
+    await expect(statusIndicators.first(), "Storage status indicators must be present").toBeVisible();
   });
 });
 
