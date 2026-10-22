@@ -1,12 +1,15 @@
 # Web Dockerfile - Next.js frontend
-FROM node:25-alpine AS base
+FROM node:26-alpine AS base
+
+# Apply Alpine security updates published since the base image was built
+RUN apk upgrade --no-cache
 
 # Dependencies stage
 FROM base AS deps
 WORKDIR /app
 
 # Install pnpm
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9.15.9
 
 # Copy package files for all workspace packages
 COPY package.json pnpm-workspace.yaml turbo.json ./
@@ -32,7 +35,7 @@ FROM base AS dev
 WORKDIR /app
 
 # Install pnpm
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9.15.9
 
 # Copy node_modules and source from deps stage
 COPY --from=deps /app ./
