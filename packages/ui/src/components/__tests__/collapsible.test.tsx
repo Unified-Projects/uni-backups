@@ -204,9 +204,20 @@ describe("Collapsible", () => {
       expect(trigger).toHaveAttribute("aria-expanded", "true");
     });
 
-    it("trigger has aria-controls attribute", () => {
+    it("closed trigger does not reference unmounted content", () => {
       renderCollapsible();
-      expect(screen.getByRole("button")).toHaveAttribute("aria-controls");
+      expect(screen.getByRole("button")).not.toHaveAttribute("aria-controls");
+    });
+
+    it("open trigger aria-controls references the content", () => {
+      renderCollapsible();
+      const trigger = screen.getByRole("button");
+
+      fireEvent.click(trigger);
+
+      const controlsId = trigger.getAttribute("aria-controls");
+      expect(controlsId).toBeTruthy();
+      expect(screen.getByText("Hidden content")).toHaveAttribute("id", controlsId);
     });
 
     it("supports keyboard toggle with Enter", () => {

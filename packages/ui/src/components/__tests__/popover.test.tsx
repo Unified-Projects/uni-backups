@@ -57,7 +57,9 @@ describe("Popover", () => {
         expect(screen.getByText("Popover content here")).toBeInTheDocument();
       });
 
+      // Popover defers outside dismissal for primary-button presses until the click completes.
       fireEvent.pointerDown(document.body);
+      fireEvent.click(document.body);
       await waitFor(() => {
         expect(screen.queryByText("Popover content here")).not.toBeInTheDocument();
       });
