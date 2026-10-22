@@ -1,4 +1,4 @@
-import { test, expect, describe } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 
 const BASE_URL = process.env.API_URL || "http://localhost:3000";
 const API_URL = process.env.TEST_API_URL || "http://localhost:3001";
@@ -14,7 +14,7 @@ const CREATED_JOB_NAMES = [
   "volume-backup-test",
 ];
 
-describe("Jobs CRUD E2E Tests", () => {
+test.describe("Jobs CRUD E2E Tests", () => {
   test.afterAll(async ({ request }) => {
     // Clean up all jobs created by this suite. They use fake external hosts and
     // will fail if triggered by any other test or scheduled run.
@@ -28,7 +28,7 @@ describe("Jobs CRUD E2E Tests", () => {
     await page.waitForLoadState("networkidle");
   });
 
-  describe("Job List", () => {
+  test.describe("Job List", () => {
     test("should display list of jobs", async ({ page }) => {
       await expect(page.locator("table")).toBeVisible();
 
@@ -74,7 +74,7 @@ describe("Jobs CRUD E2E Tests", () => {
     });
   });
 
-  describe("Create Job", () => {
+  test.describe("Create Job", () => {
     test("should create folder backup job", async ({ page }) => {
       await page.locator('button:has-text("Create Job")').click();
 
@@ -188,10 +188,10 @@ describe("Jobs CRUD E2E Tests", () => {
     });
   });
 
-  describe("Edit Job", () => {
+  test.describe("Edit Job", () => {
     test("should edit job configuration", async ({ page }) => {
       const editButton = page.locator('tr').filter({ hasText: 'test-postgres' }).locator('button:has-text("Edit")');
-      await expect(editButton).toHaveCount(1, { message: "Edit button must be present for test-postgres" });
+      await expect(editButton, "Edit button must be present for test-postgres").toHaveCount(1);
       await editButton.click();
       await expect(page.locator('[role="dialog"]')).toBeVisible();
 
@@ -216,7 +216,7 @@ describe("Jobs CRUD E2E Tests", () => {
 
     test("should update retention policy", async ({ page }) => {
       const editButton = page.locator('tr').filter({ hasText: 'test-postgres' }).locator('button:has-text("Edit")');
-      await expect(editButton).toHaveCount(1, { message: "Edit button must be present for test-postgres" });
+      await expect(editButton, "Edit button must be present for test-postgres").toHaveCount(1);
       await editButton.click();
       await expect(page.locator('[role="dialog"]')).toBeVisible();
 
@@ -243,7 +243,7 @@ describe("Jobs CRUD E2E Tests", () => {
 
     test("should change job storage backend", async ({ page }) => {
       const editButton = page.locator('tr').filter({ hasText: 'test-postgres' }).locator('button:has-text("Edit")');
-      await expect(editButton).toHaveCount(1, { message: "Edit button must be present for test-postgres" });
+      await expect(editButton, "Edit button must be present for test-postgres").toHaveCount(1);
       await editButton.click();
       await expect(page.locator('[role="dialog"]')).toBeVisible();
 
@@ -267,15 +267,15 @@ describe("Jobs CRUD E2E Tests", () => {
     });
   });
 
-  describe("Delete Job", () => {
+  test.describe("Delete Job", () => {
     test("should delete job with confirmation", async ({ page }) => {
       const jobName = "postgres-backup-test";
       const jobRow = page.locator("tbody tr").filter({ hasText: jobName });
 
-      await expect(jobRow).toHaveCount(1, { message: `Job "${jobName}" must exist in the table to test deletion` });
+      await expect(jobRow, `Job "${jobName}" must exist in the table to test deletion`).toHaveCount(1);
 
       const deleteButton = jobRow.first().locator('button[aria-label*="Delete"]');
-      await expect(deleteButton).toHaveCount(1, { message: `Delete button must be present on "${jobName}" row` });
+      await expect(deleteButton, `Delete button must be present on "${jobName}" row`).toHaveCount(1);
 
       await deleteButton.click();
 
@@ -315,7 +315,7 @@ describe("Jobs CRUD E2E Tests", () => {
       test.skip(!hasRunningJob, "No running jobs available to test deletion prevention");
 
       const deleteButton = runningRow.locator('button[aria-label*="Delete"]');
-      await expect(deleteButton).toHaveCount(1, { message: "Delete button must be present on running job row" });
+      await expect(deleteButton, "Delete button must be present on running job row").toHaveCount(1);
 
       await deleteButton.click();
 
@@ -324,12 +324,12 @@ describe("Jobs CRUD E2E Tests", () => {
 
       await page.waitForTimeout(1000);
       const errorMsg = page.locator('[data-testid="error-message"]');
-      await expect(errorMsg).toBeVisible({ timeout: 10000, message: "Server must reject deletion of a running job with an error message" });
+      await expect(errorMsg, "Server must reject deletion of a running job with an error message").toBeVisible({ timeout: 10000 });
       await expect(errorMsg).toContainText(/cannot delete running job/i);
     });
   });
 
-  describe("Job Trigger", () => {
+  test.describe("Job Trigger", () => {
     test("should manually trigger job run", async ({ page }) => {
       // Target test-folder-backup specifically — it has a known working source path.
       // Never use .first() here: dynamically created jobs from the Create tests
@@ -372,7 +372,7 @@ describe("Jobs CRUD E2E Tests", () => {
     });
   });
 
-  describe("Job Validation", () => {
+  test.describe("Job Validation", () => {
     test("should validate cron expression format", async ({ page }) => {
       await page.locator('button:has-text("Create Job")').click();
 

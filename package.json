@@ -1,8 +1,8 @@
 {
   "name": "uni-backups",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@9.15.9",
   "type": "module",
   "scripts": {
     "dev": "turbo dev",
@@ -36,18 +36,26 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@uni-backups/queue": "workspace:*",
     "@uni-backups/shared": "workspace:*",
-    "bullmq": "^5.70.1",
-    "fast-check": "^4.5.3",
-    "ioredis": "^5.9.3",
-    "mysql2": "^3.18.0",
-    "pg": "^8.18.0",
-    "turbo": "^2.8.10",
+    "bullmq": "^5.81.5",
+    "fast-check": "^4.10.2",
+    "ioredis": "^5.11.1",
+    "mysql2": "^3.24.6",
+    "pg": "^8.23.1",
+    "turbo": "^2.11.10",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18",
-    "vite-tsconfig-paths": "^6.1.1"
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.12"
   },
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "pnpm": {
+    "overrides": {
+      "@grpc/grpc-js": "^1.14.5",
+      "protobufjs": "^7.6.1",
+      "uuid": "^11.1.1",
+      "vite": "^7.3.7"
+    }
+  }
 }

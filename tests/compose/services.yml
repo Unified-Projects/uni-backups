@@ -17,7 +17,7 @@
 services:
   # MinIO - S3-compatible object storage
   minio:
-    image: minio/minio:latest
+    image: chainguard/minio:latest-dev
     profiles: ["s3", "storage", "full", "test"]
     command: server /data --console-address ":9001"
     environment:
@@ -29,7 +29,7 @@ services:
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -39,7 +39,7 @@ services:
 
   # MinIO bucket initialization
   minio-init:
-    image: minio/mc:latest
+    image: chainguard/minio-client:latest-dev
     profiles: ["s3", "storage", "full", "test"]
     depends_on:
       minio:

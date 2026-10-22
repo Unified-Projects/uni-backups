@@ -528,7 +528,7 @@ test.describe("Concurrent Operations", () => {
     for (const result of results) {
       expect(result.status).toBe("fulfilled");
       if (result.status === "fulfilled") {
-        const status = (result.value as Response).status();
+        const status = result.value.status();
         // 200 = queued; 409 = already running (triggered by a parallel browser test) — both are acceptable
         expect([200, 409], `Triggering a distinct job returned unexpected status ${status}`).toContain(status);
       }
@@ -562,9 +562,9 @@ test.describe("Concurrent Operations", () => {
     for (const result of results) {
       expect(result.status).toBe("fulfilled");
       if (result.status === "fulfilled") {
-        if ((result.value as Response).ok()) {
+        if (result.value.ok()) {
           successCount++;
-        } else if ((result.value as Response).status() === 409) {
+        } else if (result.value.status() === 409) {
           conflictCount++;
         }
       }

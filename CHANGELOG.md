@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-23
+
+### Security
+
+- Next.js 16.4.2 fixes the critical remote code execution advisories in image optimisation, `use cache` and `next/og` (GHSA-673q-mjm6-r5xr, GHSA-2464-fhr4-w9xw, GHSA-vcvr-r3jv-pc5j, GHSA-2xp9-vwfh-vxw4, CVE-2026-75604)
+- protobufjs 7.6.6 fixes arbitrary code execution (CVE-2026-41242) and several denial of service issues
+- @grpc/grpc-js 1.14.6, hono 4.13.13, vite 7.3.7 and uuid 11.1.1 pick up high and moderate severity fixes
+- Images now build on Node 26, whose bundled npm ships tar 7.5.22, and apply Alpine and Debian security updates at build time
+
+### Changed
+
+- All other dependencies updated to their latest release within the current major version
+- Docker images pin pnpm 9.15.9 to match `packageManager`
+
 ## [0.2.2] - 2026-04-14
 
 ### Added

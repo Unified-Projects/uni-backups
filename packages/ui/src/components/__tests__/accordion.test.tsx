@@ -229,13 +229,26 @@ describe("Accordion", () => {
       expect(triggers[0]).toHaveAttribute("aria-expanded", "true");
     });
 
-    it("triggers have aria-controls attribute", () => {
+    it("closed triggers do not reference unmounted content", () => {
       renderAccordion();
       const triggers = screen.getAllByRole("button");
 
       triggers.forEach((trigger) => {
-        expect(trigger).toHaveAttribute("aria-controls");
+        expect(trigger).not.toHaveAttribute("aria-controls");
       });
+    });
+
+    it("open trigger aria-controls references its content region", () => {
+      renderAccordion();
+      const trigger = screen.getByRole("button", { name: "Section 1" });
+
+      fireEvent.click(trigger);
+
+      const controlsId = trigger.getAttribute("aria-controls");
+      expect(controlsId).toBeTruthy();
+      const region = screen.getByRole("region");
+      expect(region).toHaveAttribute("id", controlsId);
+      expect(region).toHaveTextContent("Content 1");
     });
 
     it("supports keyboard navigation", () => {

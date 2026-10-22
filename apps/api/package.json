@@ -16,22 +16,22 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@hono/zod-openapi": "^1.2.2",
+    "@hono/zod-openapi": "^1.6.3",
     "@uni-backups/queue": "workspace:*",
     "@uni-backups/shared": "workspace:*",
-    "bullmq": "^5.70.1",
-    "hono": "^4.12.2",
-    "ioredis": "^5.9.3",
-    "zod": "^4.3.6"
+    "bullmq": "^5.81.5",
+    "hono": "^4.13.13",
+    "ioredis": "^5.11.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^25.3.0",
-    "@vitest/coverage-v8": "^4.0.18",
-    "mysql2": "^3.18.0",
-    "pg": "^8.18.0",
-    "testcontainers": "^11.12.0",
+    "@types/node": "^25.9.9",
+    "@vitest/coverage-v8": "^4.1.12",
+    "mysql2": "^3.24.6",
+    "pg": "^8.23.1",
+    "testcontainers": "^11.14.0",
     "typescript": "^5.9.3",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.12"
   }
 }

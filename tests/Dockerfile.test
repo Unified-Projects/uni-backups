@@ -37,7 +37,7 @@ RUN ARCH=$(dpkg --print-architecture) \
     && restic version
 
 # Install pnpm and bun
-RUN npm install -g pnpm bun
+RUN npm install -g pnpm@9.15.9 bun
 
 # Create app directory
 WORKDIR /app
