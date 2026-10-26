@@ -23,7 +23,7 @@
     "ioredis": "^5.11.1"
   },
   "devDependencies": {
-    "@types/node": "^25.9.9",
+    "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "^4.1.12",
     "ioredis-mock": "^8.13.1",
     "typescript": "^5.9.3",
