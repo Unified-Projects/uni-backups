@@ -18,13 +18,13 @@
   "dependencies": {
     "@uni-backups/queue": "workspace:*",
     "@uni-backups/shared": "workspace:*",
-    "bullmq": "^5.81.5",
+    "bullmq": "^6.4.0",
     "hono": "^4.13.13",
-    "ioredis": "^5.11.1"
+    "ioredis": "^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.9",
-    "@vitest/coverage-v8": "^4.1.12",
+    "@vitest/coverage-v8": "^5.0.5",
     "ioredis-mock": "^8.13.1",
     "typescript": "^5.9.3",
     "vite-tsconfig-paths": "^6.1.1",
