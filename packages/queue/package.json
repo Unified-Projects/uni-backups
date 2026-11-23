@@ -18,12 +18,12 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "bullmq": "^5.81.5",
-    "ioredis": "^5.11.1"
+    "bullmq": "^6.7.8",
+    "ioredis": "^6.0.0"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^4.1.12",
-    "fast-check": "^4.10.2",
+    "@vitest/coverage-v8": "^5.1.1",
+    "fast-check": "^4.10.3",
     "ioredis-mock": "^8.13.1",
     "typescript": "^5.9.3",
     "vite-tsconfig-paths": "^6.1.1",
